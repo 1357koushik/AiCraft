@@ -3,6 +3,13 @@ import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.js';
 import { distance3D } from '../utils/math.js';
+import {
+  techniqueChopTreeFull,
+  techniqueMineStaircase,
+  techniqueBuildShelter,
+  techniqueVacuumDrops,
+  updatePathfinderMovements,
+} from './techniques.js';
 
 async function autoEquipBestTool(bot: Bot, block: any): Promise<void> {
   if (!bot.inventory) return;
@@ -133,45 +140,13 @@ export const miningBuildingActions: ActionDef[] = [
   {
     name: 'chop_tree',
     category: 'mining_building',
-    description: 'Macro to chop a nearby tree (logs from base upward).',
+    description: 'Autonomous macro: Navigates to tree, clears obstructing leaves, chops logs base-to-top, towers up if tall, and auto-vacuums all dropped wood/saplings.',
     parameterSchema: {
       logType: { type: 'string', description: 'Optional log name (e.g. oak_log)' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && obs.blocks.notableBlocks.some((b) => b.name.includes('log')),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      const logBlock = bot.findBlock({
-        matching: (b) => b.name.includes('log'),
-        maxDistance: ctx.config.perception.scanRadius || 16,
-      });
-
-      if (!logBlock) {
-        return { status: 'failed', reason: 'No tree / log found nearby.' };
-      }
-
-      try {
-        const goal = new goals.GoalGetToBlock(logBlock.position.x, logBlock.position.y, logBlock.position.z);
-        await (bot as any).pathfinder.goto(goal);
-      } catch (err: any) {
-        return { status: 'failed', reason: `Failed to reach tree: ${err.message}` };
-      }
-
-      let logsChopped = 0;
-      // Chop upward up to 5 logs
-      let currentPos = logBlock.position.clone();
-      for (let yOffset = 0; yOffset < 5; yOffset++) {
-        const target = bot.blockAt(currentPos.offset(0, yOffset, 0));
-        if (!target || !target.name.includes('log')) break;
-
-        await autoEquipBestTool(bot, target);
-        try {
-          await bot.dig(target);
-          logsChopped++;
-        } catch {
-          break;
-        }
-      }
-
-      return { status: 'success', reason: `Chopped ${logsChopped} logs from tree.` };
+      return techniqueChopTreeFull(bot, ctx.config.perception.scanRadius || 16);
     },
   },
   {
@@ -342,6 +317,40 @@ export const miningBuildingActions: ActionDef[] = [
       if (!matureCrop) return { status: 'failed', reason: 'No mature crop found in reach.' };
       await bot.dig(matureCrop);
       return { status: 'success', reason: `Harvested ${matureCrop.name}.` };
+    },
+  },
+  {
+    name: 'mine_staircase',
+    category: 'mining_building',
+    description: 'Autonomous technique: Safely mine a forward-descending 1x2 staircase without digging straight down, automatically lighting dark areas.',
+    parameterSchema: {
+      steps: { type: 'number', description: 'Number of descending steps to mine (default 6)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
+    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+      return techniqueMineStaircase(bot, params.steps || 6);
+    },
+  },
+  {
+    name: 'build_shelter',
+    category: 'mining_building',
+    description: 'Autonomous macro: Constructs a 3x3x3 dirt/cobblestone survival shelter with doorway and roof.',
+    parameterSchema: {},
+    isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
+    execute: async (bot: Bot): Promise<ActionResult> => {
+      return techniqueBuildShelter(bot);
+    },
+  },
+  {
+    name: 'vacuum_drops',
+    category: 'mining_building',
+    description: 'Autonomous macro: Walks to and vacuums all dropped items in a 10-block radius.',
+    parameterSchema: {
+      radius: { type: 'number', description: 'Radius in blocks (default 10)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && obs.entities.some((e) => e.isItem),
+    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+      return techniqueVacuumDrops(bot, params.radius || 10);
     },
   },
 ];

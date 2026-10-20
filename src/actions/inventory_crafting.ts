@@ -1,6 +1,7 @@
 import { Bot } from 'mineflayer';
 import { goals } from 'mineflayer-pathfinder';
 import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.js';
+import { techniqueCraftPipeline } from './techniques.js';
 
 export const inventoryCraftingActions: ActionDef[] = [
   {
@@ -256,6 +257,21 @@ export const inventoryCraftingActions: ActionDef[] = [
       } catch (err: any) {
         return { status: 'failed', reason: `Withdraw failed: ${err.message}` };
       }
+    },
+  },
+  {
+    name: 'craft_pipeline',
+    category: 'inventory_crafting',
+    description: 'Autonomous macro: Recursively crafts prerequisite items (logs -> planks -> table -> sticks -> tool) in a single code execution.',
+    parameterSchema: {
+      item: { type: 'string', description: 'Target tool or item (e.g. wooden_pickaxe, stone_pickaxe, crafting_table)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && (obs.inventory.craftableNow.length > 0 || Object.keys(obs.inventory.aggregates.totalItemCounts).some((k) => k.includes('log') || k.includes('plank'))),
+    getAvailableChoices: () => ({
+      item: ['wooden_pickaxe', 'stone_pickaxe', 'wooden_axe', 'stone_axe', 'wooden_sword', 'stone_sword', 'crafting_table'],
+    }),
+    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+      return techniqueCraftPipeline(bot, params.item || 'wooden_pickaxe');
     },
   },
 ];

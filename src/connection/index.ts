@@ -1,8 +1,8 @@
 import mineflayer, { Bot } from 'mineflayer';
-import { pathfinder, Movements } from 'mineflayer-pathfinder';
-import minecraftData from 'minecraft-data';
+import { pathfinder } from 'mineflayer-pathfinder';
 import { AppConfig } from '../config/index.js';
 import { AgentLogger } from '../utils/logger.js';
+import { updatePathfinderMovements } from '../actions/techniques.js';
 
 export interface ConnectionEvents {
   onSpawn?: (bot: Bot) => void;
@@ -52,11 +52,8 @@ export class ConnectionManager {
         this.reconnectAttempts = 0;
         this.logger.info(`Bot successfully spawned in world as '${bot.username}'!`);
 
-        // Configure pathfinder default movements for 1.21.6
-        const defaultMove = new Movements(bot);
-        defaultMove.canDig = true;
-        defaultMove.allow1by1towers = false;
-        (defaultMove as any).scafoldingBlocks = [];
+        // Configure pathfinder movements with smart scaffolding, digging, and 1x1 pillaring
+        const defaultMove = updatePathfinderMovements(bot);
         (bot as any).pathfinder.setMovements(defaultMove);
 
         // Optional Prismarine web viewer

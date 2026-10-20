@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.js';
 import { distance3D } from '../utils/math.js';
+import { updatePathfinderMovements, techniquePillarUp, techniqueBridge } from './techniques.js';
 
 export const movementActions: ActionDef[] = [
   {
@@ -56,6 +57,7 @@ export const movementActions: ActionDef[] = [
       }
 
       try {
+        updatePathfinderMovements(bot);
         const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, range);
         await (bot as any).pathfinder.goto(goal);
         return { status: 'success', reason: `Reached target at ${targetPos.x}, ${targetPos.y}, ${targetPos.z}` };
@@ -280,6 +282,32 @@ export const movementActions: ActionDef[] = [
       } catch {}
       bot.clearControlStates();
       return { status: 'success', reason: 'Stopped all movement.' };
+    },
+  },
+  {
+    name: 'pillar_up',
+    category: 'movement',
+    description: 'Autonomous technique: Jump and place blocks beneath feet to reach a higher ledge, cliff, or tree canopy.',
+    parameterSchema: {
+      height: { type: 'number', description: 'Blocks to pillar up (1 to 8, default 3)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
+    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+      return techniquePillarUp(bot, params.height || 3);
+    },
+  },
+  {
+    name: 'bridge',
+    category: 'movement',
+    description: 'Autonomous technique: Crouch (sneak) to prevent falling and build a bridge across a cliff edge or chasm.',
+    parameterSchema: {
+      direction: { type: 'string', enum: ['forward', 'north', 'south', 'east', 'west'], default: 'forward' },
+      distance: { type: 'number', description: 'Distance in blocks to bridge (1 to 12, default 4)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
+    getAvailableChoices: () => ({ direction: ['forward', 'north', 'south', 'east', 'west'] }),
+    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+      return techniqueBridge(bot, params.direction || 'forward', params.distance || 4);
     },
   },
 ];
