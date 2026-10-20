@@ -277,6 +277,19 @@ Located in [`src/actions/techniques.ts`](file:///b:/minecraft_ai_scratch/src/act
 - **Lava Escape Reflex**: Cancels eating, actively scans 8 horizontal directions for confirmed solid, non-lava ground. If safe ground is found, paths and jumps toward it; if surrounded by lava column, jumps straight up rather than blindly walking forward.
 - **Auto-Eat Guard**: Uses an `isEating` state lock to prevent overlapping eat invocations. Emergency reflexes interrupt eating immediately.
 
+### 6.4 Multi-Action Sequential Plan Execution (`src/agent/loop.ts`)
+When the model returns multiple actions in a single plan (e.g. `[select_hotbar, place_block]`):
+- **Fresh Observation Revalidation**: Before each step in the batch, the agent executes `ObservationBuilder.build()` to capture up-to-date world geometry, entity positions, and bot vitals.
+- **Vitality Check**: If the bot is dead or health reaches 0 mid-plan, execution halts immediately.
+- **Pre-execution Recheck**: `AvailabilityEngine.revalidateAction` verifies that the next action is still legal under the fresh observation snapshot.
+- **Batch Timeout Bounding**: Bounded by `maxBatchDurationMs = 45000` to prevent runaway batch cycles.
+- **Failure Halting**: If any action fails or is interrupted, remaining steps in the batch are aborted immediately.
+
+### 6.5 Connection Lifecycle & Single Controller Rebinding (`src/connection/index.ts`, `src/agent/loop.ts`, `src/main.ts`)
+- **Reconnect Storm Prevention**: `ConnectionManager.connect()` utilizes an `isReconnecting` boolean guard and cancels any pending `reconnectTimer` before initiating a new socket handshake.
+- **Single Controller Persistence**: A single `AgentController` instance persists throughout the process lifetime. Upon reconnecting, `agentController.updateBotInstance(connectedBot)` safely rebinds Mineflayer event listeners (`entityHurt`, `death`, `chat`, `kicked`, `end`) without accumulating duplicate listeners or restarting orphaned agent loops.
+- **Death Recovery**: Upon `death`, running actions are preempted with `ActionPriority.SURVIVAL_EMERGENCY`, pathfinder is stopped, controls cleared, and memory logs record the death location.
+
 ---
 
 ## 7. Robust LLM Parsing, Balanced Extraction & Schema Contract
@@ -321,6 +334,10 @@ Commands executed via `run_command` are strictly sanitized:
 - Must match the configured `commandAllowlist` (e.g. `help`, `list`, `time`, `weather`).
 - Non-owner chat messages are treated strictly as untrusted data.
 - Never evaluates or executes arbitrary model-generated code (`no eval()`).
+
+### 8.3 Observability & Deduplicated Logging (`src/utils/logger.ts`)
+- **Deduplicated Error Logging**: `errorDebounced(prefix, message, windowMs = 5000)` suppresses duplicate repetitive error logs that would otherwise flood console output during transient network or physics loops.
+- **Action Lifecycle Events**: `logActionEvent(action, state, metadata)` records structured events (`started`, `finished`, `interrupted`, `failed`) for real-time observability and auditability.
 
 ---
 
