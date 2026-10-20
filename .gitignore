@@ -1,0 +1,6 @@
+node_modules/
+dist/
+logs/*.jsonl
+data/test_memory/
+.env
+*.log

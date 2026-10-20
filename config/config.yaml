@@ -1,0 +1,69 @@
+# Minecraft LLM Agent Configuration
+# Compatible with Minecraft Java Edition 1.21.6 (Protocol 771)
+
+server:
+  host: "127.0.0.1"
+  port: 25565
+  version: "1.21.6"
+  username: "AIAgentBot"
+  auth: "offline" # "offline" or "microsoft"
+  autoReconnect: true
+  reconnectMaxAttempts: 10
+  reconnectBaseDelayMs: 3000
+  reconnectMaxDelayMs: 30000
+
+llm:
+  # Provider options: "lmstudio", "openai", "anthropic", "mock"
+  provider: "lmstudio"
+  baseUrl: "http://127.0.0.1:1234/v1"
+  model: "default"
+  apiKeyEnv: "OPENAI_API_KEY"
+  temperature: 0.3
+  maxTokens: 1024
+  timeoutMs: 45000
+  jsonMode: true
+  allowCloudFallback: false
+  fallbackProvider: null
+
+agent:
+  maxActionsPerStep: 1 # Default 1, max 5 only after validation
+  historyLength: 8
+  heartbeatIntervalMs: 1000
+  handedness: "right"
+  owners: ["OwnerPlayer"] # Exact names of trusted players who can give instructions
+  friends: [] # Players who cannot be attacked
+  requestTimeoutMs: 30000
+  maxRetriesOnMalformedJson: 2
+  stepMode: false # When true, requires manual console approval per step
+
+perception:
+  visibilityMode: "surround" # "surround" or "forward-cone"
+  scanRadius: 16
+  entityRadius: 20
+  localMapSize: 9 # 9x9 horizontal grid
+  localMapHeightBelow: 2
+  localMapHeightAbove: 3
+  tokenBudget: 2000
+
+safety:
+  protectedNames: ["OwnerPlayer"]
+  protectedEntities: ["player", "wolf", "cat", "horse", "iron_golem"]
+  blockedActions: ["run_command", "use_lava", "use_tnt"]
+  allowCommandExecution: false
+  commandAllowlist: ["help", "list"]
+  reflexes:
+    emergencyFlee: true
+    fleeHealthThreshold: 6.0
+    autoEat: true
+    eatFoodThreshold: 14.0
+    escapeLavaWater: true
+    avoidMiningStraightDown: true
+  dangerZones: []
+
+logging:
+  level: "info" # "trace" | "debug" | "info" | "warn" | "error"
+  folder: "./logs"
+  fullPromptResponseCapture: false
+  redactSecrets: true
+  enablePrismarineViewer: false
+  viewerPort: 3000
