@@ -146,7 +146,7 @@ export const miningBuildingActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && obs.blocks.notableBlocks.some((b) => b.name.includes('log')),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniqueChopTreeFull(bot, ctx.config.perception.scanRadius || 16);
+      return techniqueChopTreeFull(bot, ctx.config.perception.scanRadius || 16, ctx.abortSignal);
     },
   },
   {
@@ -327,8 +327,8 @@ export const miningBuildingActions: ActionDef[] = [
       steps: { type: 'number', description: 'Number of descending steps to mine (default 6)' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      return techniqueMineStaircase(bot, params.steps || 6);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      return techniqueMineStaircase(bot, params.steps || 6, ctx.abortSignal);
     },
   },
   {
@@ -337,8 +337,8 @@ export const miningBuildingActions: ActionDef[] = [
     description: 'Autonomous macro: Constructs a 3x3x3 dirt/cobblestone survival shelter with doorway and roof.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
-    execute: async (bot: Bot): Promise<ActionResult> => {
-      return techniqueBuildShelter(bot);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      return techniqueBuildShelter(bot, ctx.abortSignal);
     },
   },
   {
@@ -349,8 +349,8 @@ export const miningBuildingActions: ActionDef[] = [
       radius: { type: 'number', description: 'Radius in blocks (default 10)' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && obs.entities.some((e) => e.isItem),
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      return techniqueVacuumDrops(bot, params.radius || 10);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      return techniqueVacuumDrops(bot, params.radius || 10, ctx.abortSignal);
     },
   },
 ];

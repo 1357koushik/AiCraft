@@ -7,6 +7,11 @@ describe('Auto Attack Mod & Reflex Layer', () => {
   const config = loadConfig();
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
+  it('is disabled by default adhering to opt-in safety', () => {
+    const reflex = new ReflexLayer(config, logger);
+    expect(reflex.isAutoAttackEnabled()).toBe(false);
+  });
+
   it('triggers auto-attack against nearby hostile mobs when enabled', async () => {
     const reflex = new ReflexLayer(config, logger);
     reflex.setAutoAttackEnabled(true);
@@ -21,6 +26,8 @@ describe('Auto Attack Mod & Reflex Layer', () => {
           type: 'mob',
           position: new Vec3(2, 64, 0),
           height: 1.8,
+          isValid: true,
+          health: 20,
         },
       },
       inventory: {
@@ -60,6 +67,7 @@ describe('Auto Attack Mod & Reflex Layer', () => {
 
   it('strictly refuses to auto-attack the owner or protected entities', async () => {
     const reflex = new ReflexLayer(config, logger);
+    reflex.setAutoAttackEnabled(true);
 
     const mockBot: any = {
       entity: { position: new Vec3(0, 64, 0) },
@@ -126,7 +134,7 @@ describe('Auto Attack Mod & Reflex Layer', () => {
       lookAt: vi.fn().mockResolvedValue(undefined),
     };
 
-    const hostileAttacker = { name: 'skeleton', type: 'hostile', position: new Vec3(2, 64, 0), height: 1.8 };
+    const hostileAttacker = { name: 'skeleton', type: 'hostile', position: new Vec3(2, 64, 0), height: 1.8, isValid: true, health: 20 };
     const res1 = await reflex.autoDefendAttacker(mockBot, hostileAttacker);
     expect(res1).toBe(true);
     expect(mockBot.attack).toHaveBeenCalledWith(hostileAttacker);
@@ -139,5 +147,96 @@ describe('Auto Attack Mod & Reflex Layer', () => {
     // If no attacker (environmental damage), returns false
     const res3 = await reflex.autoDefendAttacker(mockBot, null);
     expect(res3).toBe(false);
+  });
+
+  it('refuses retaliation against a dead or invalid attacker', async () => {
+    const reflex = new ReflexLayer(config, logger);
+    reflex.setAutoAttackEnabled(true);
+
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), height: 1.6 },
+      inventory: { items: () => [] },
+      attack: vi.fn(),
+    };
+
+    const deadAttacker = { name: 'zombie', type: 'hostile', position: new Vec3(2, 64, 0), isValid: true, health: 0 };
+    expect(await reflex.autoDefendAttacker(mockBot, deadAttacker)).toBe(false);
+
+    const invalidAttacker = { name: 'zombie', type: 'hostile', position: new Vec3(2, 64, 0), isValid: false, health: 20 };
+    expect(await reflex.autoDefendAttacker(mockBot, invalidAttacker)).toBe(false);
+    expect(mockBot.attack).not.toHaveBeenCalled();
+  });
+
+  it('prevents overlapping eating requests when eating is already in progress', async () => {
+    const reflex = new ReflexLayer(config, logger);
+    (reflex as any).isEating = true; // eating is in progress
+
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0) },
+      inventory: { items: () => [{ name: 'bread', count: 3 }] },
+    };
+
+    const mockObs: any = {
+      vitals: { isAlive: true, underwater: false, oxygen: 20, health: 20, food: 6, movementState: {} },
+      inventory: { foodList: [{ name: 'bread', count: 3 }] },
+      entities: [],
+    };
+
+    const res = await reflex.evaluateReflexes(mockBot, mockObs);
+    expect(res.triggered).toBe(false); // suppressed because already eating
+  });
+
+  it('interrupts eating and swims up when drowning emergency occurs', async () => {
+    const reflex = new ReflexLayer(config, logger);
+    (reflex as any).isEating = true;
+
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0) },
+      setControlState: vi.fn(),
+      deactivateItem: vi.fn(),
+    };
+
+    const mockObs: any = {
+      vitals: { isAlive: true, underwater: true, oxygen: 5, health: 18, food: 6, movementState: {} },
+      inventory: { foodList: [] },
+      entities: [],
+    };
+
+    const res = await reflex.evaluateReflexes(mockBot, mockObs);
+    expect(res.triggered).toBe(true);
+    expect(res.name).toBe('swim_up_low_oxygen');
+    expect(mockBot.deactivateItem).toHaveBeenCalled();
+    expect(reflex.getIsEating()).toBe(false);
+  });
+
+  it('scans for and escapes towards safe non-lava ground during lava hazard', async () => {
+    const reflex = new ReflexLayer(config, logger);
+
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0) },
+      blockAt: vi.fn().mockImplementation((pos: Vec3) => {
+        // Safe ground on east bank at x = 1, y = 63
+        if (pos.x === 1 && pos.y === 63 && pos.z === 0) return { name: 'stone', boundingBox: 'block' };
+        if (pos.x === 1 && pos.y === 64 && pos.z === 0) return { name: 'air', boundingBox: 'empty' };
+        // Current position is lava
+        return { name: 'lava', boundingBox: 'empty' };
+      }),
+      lookAt: vi.fn().mockResolvedValue(undefined),
+      setControlState: vi.fn(),
+      clearControlStates: vi.fn(),
+    };
+
+    const mockObs: any = {
+      vitals: { isAlive: true, underwater: false, oxygen: 20, health: 15, food: 20, movementState: { inLava: true } },
+      inventory: { foodList: [] },
+      entities: [],
+    };
+
+    const res = await reflex.evaluateReflexes(mockBot, mockObs);
+    expect(res.triggered).toBe(true);
+    expect(res.name).toBe('flee_lava_hazard');
+    expect(res.result?.reason).toContain('safe ground');
+    expect(mockBot.setControlState).toHaveBeenCalledWith('jump', true);
+    expect(mockBot.clearControlStates).toHaveBeenCalled();
   });
 });

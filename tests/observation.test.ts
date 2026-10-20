@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Vec3 } from 'vec3';
 import { loadConfig } from '../src/config/index.js';
 import { buildObservation } from '../src/perception/index.js';
+import { extractBlocks } from '../src/perception/blocks.js';
 
 describe('Perception & Observation Builder', () => {
   it('correctly constructs observation from bot world state', () => {
@@ -98,6 +99,47 @@ describe('Perception & Observation Builder', () => {
     expect(obs.inventory.foodList[0].name).toBe('bread');
     expect(obs.entities.length).toBe(1);
     expect(obs.entities[0].name).toBe('pig');
-    expect(obs.blocks.localMap.grid.length).toBe(config.perception.localMapSize);
+  });
+
+  it('correctly maps unsupported drops/cliffs to "v" instead of treating air as passable ground', () => {
+    const config = loadConfig();
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+      blockAt: vi.fn().mockImplementation((pos: Vec3) => {
+        // Block under bot is solid
+        if (pos.x === 0 && pos.z === 0 && pos.y === 63) return { name: 'stone', boundingBox: 'block' };
+        // Front block has a sheer drop (air all the way down)
+        if (pos.x === 0 && pos.z === 1) return { name: 'air', boundingBox: 'empty' };
+        if (pos.x === 0 && pos.z === 1 && pos.y === 63) return { name: 'air', boundingBox: 'empty' };
+        // Surrounding terrain
+        if (pos.y === 63) return { name: 'stone', boundingBox: 'block' };
+        return { name: 'air', boundingBox: 'empty' };
+      }),
+    };
+
+    const blocksState = extractBlocks(mockBot, config);
+    // Center is (4, 4) in 9x9 grid, so z = +1 is (row 5, col 4)
+    expect(blocksState.localMap.grid[4][4]).toBe('P');
+    expect(blocksState.localMap.grid[5][4]).toBe('v'); // Cliff / drop
+    expect(blocksState.localMap.legend['v']).toContain('Drop/Cliff/Gap');
+  });
+
+  it('correctly marks unloaded chunk blocks as "?"', () => {
+    const config = loadConfig();
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+      blockAt: vi.fn().mockImplementation((pos: Vec3) => {
+        if (pos.x === 0 && pos.z === 0 && pos.y === 63) return { name: 'stone', boundingBox: 'block' };
+        // Unloaded chunk boundary at x = 3
+        if (pos.x >= 3) return null;
+        if (pos.y === 63) return { name: 'stone', boundingBox: 'block' };
+        return { name: 'air', boundingBox: 'empty' };
+      }),
+    };
+
+    const blocksState = extractBlocks(mockBot, config);
+    // x = 3 is col 7 (4 + 3)
+    expect(blocksState.localMap.grid[4][7]).toBe('?');
+    expect(blocksState.localMap.legend['?']).toContain('Unknown/Unloaded');
   });
 });

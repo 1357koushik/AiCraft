@@ -165,4 +165,105 @@ describe('Agent Controller & Scenario Execution', () => {
     expect(mockBot.equip).toHaveBeenCalled();
     expect(mockBot.consume).toHaveBeenCalled();
   });
+
+  it('executes multi-action plan and re-validates each action with fresh observation', async () => {
+    const config = loadConfig();
+    config.agent.maxActionsPerStep = 3;
+    const logger = new AgentLogger(config);
+    const memory = new MemoryManager(`multi_${Date.now()}`, './data/test_memory');
+    const safety = new SafetyManager(config);
+
+    const mockBot: any = {
+      username: 'AIAgentBot',
+      health: 20,
+      food: 20,
+      isAlive: true,
+      entity: { position: new Vec3(0, 64, 0), yaw: 0, onGround: true },
+      entities: {},
+      inventory: { items: () => [], slots: new Array(46).fill(null), emptySlotCount: () => 36 },
+      registry: { blocksByName: {}, items: {}, itemsByName: {}, effects: {} },
+      time: { timeOfDay: 1000, age: 24000 },
+      blockAt: vi.fn().mockReturnValue({ name: 'grass_block', boundingBox: 'block' }),
+      blockAtCursor: vi.fn().mockReturnValue(null),
+      entityAtCursor: vi.fn().mockReturnValue(null),
+      findBlock: vi.fn().mockReturnValue(null),
+      recipesAll: vi.fn().mockReturnValue([]),
+      recipesFor: vi.fn().mockReturnValue([]),
+      setControlState: vi.fn(),
+      clearControlStates: vi.fn(),
+      chat: vi.fn(),
+      on: vi.fn(),
+      once: vi.fn(),
+      pathfinder: { stop: vi.fn() },
+    };
+
+    const scriptedMulti = [
+      {
+        decision_summary: 'Two sequential actions: wait then chat.',
+        goal: 'Sequence test',
+        actions: [
+          { action: 'wait', params: { seconds: 0.05 } },
+          { action: 'chat', params: { message: 'Action 2 reached!' } },
+        ],
+      },
+    ];
+
+    const mockProvider = new MockLLMProvider(scriptedMulti);
+    const controller = new AgentController(mockBot, config, logger, memory, safety, mockProvider);
+
+    await (controller as any).step();
+
+    expect(mockBot.chat).toHaveBeenCalledWith('Action 2 reached!');
+  });
+
+  it('stops multi-action batch execution immediately when an earlier action fails', async () => {
+    const config = loadConfig();
+    config.agent.maxActionsPerStep = 3;
+    const logger = new AgentLogger(config);
+    const memory = new MemoryManager(`fail_${Date.now()}`, './data/test_memory');
+    const safety = new SafetyManager(config);
+
+    const mockBot: any = {
+      username: 'AIAgentBot',
+      health: 20,
+      food: 20,
+      isAlive: true,
+      entity: { position: new Vec3(0, 64, 0), yaw: 0, onGround: true },
+      entities: {},
+      inventory: { items: () => [], slots: new Array(46).fill(null), emptySlotCount: () => 36 },
+      registry: { blocksByName: {}, items: {}, itemsByName: {}, effects: {} },
+      time: { timeOfDay: 1000, age: 24000 },
+      blockAt: vi.fn().mockReturnValue({ name: 'grass_block', boundingBox: 'block' }),
+      blockAtCursor: vi.fn().mockReturnValue(null),
+      entityAtCursor: vi.fn().mockReturnValue(null),
+      findBlock: vi.fn().mockReturnValue(null),
+      recipesAll: vi.fn().mockReturnValue([]),
+      recipesFor: vi.fn().mockReturnValue([]),
+      setControlState: vi.fn(),
+      clearControlStates: vi.fn(),
+      chat: vi.fn(),
+      on: vi.fn(),
+      once: vi.fn(),
+      pathfinder: { stop: vi.fn() },
+    };
+
+    // Action 1: goto non-existent target (fails); Action 2: chat (should NOT be reached)
+    const scriptedFail = [
+      {
+        decision_summary: 'Attempt invalid goto then chat.',
+        goal: 'Halt on failure test',
+        actions: [
+          { action: 'goto', params: { targetId: 'e99_nonexistent' } },
+          { action: 'chat', params: { message: 'SHOULD NEVER BE SENT' } },
+        ],
+      },
+    ];
+
+    const mockProvider = new MockLLMProvider(scriptedFail);
+    const controller = new AgentController(mockBot, config, logger, memory, safety, mockProvider);
+
+    await (controller as any).step();
+
+    expect(mockBot.chat).not.toHaveBeenCalled();
+  });
 });

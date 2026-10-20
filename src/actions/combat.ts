@@ -2,6 +2,7 @@ import { Bot } from 'mineflayer';
 import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.js';
 import { distance3D } from '../utils/math.js';
 import { goals } from 'mineflayer-pathfinder';
+import { resolveAndValidateTarget } from '../safety/index.js';
 
 export const combatActions: ActionDef[] = [
   {
@@ -16,20 +17,17 @@ export const combatActions: ActionDef[] = [
       targetId: obs.entities.filter((e) => !e.isOwner && !e.isItem).map((e) => e.id),
     }),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      const targetId = params.targetId;
-      const targetObs = ctx.observation.entities.find((e) => e.id === targetId);
-      if (!targetObs) return { status: 'failed', reason: `Entity ${targetId} not found.` };
-
-      // Safety check: NEVER attack owner or friends
-      if (targetObs.isOwner || ctx.config.agent.owners.includes(targetObs.name) || ctx.config.agent.friends.includes(targetObs.name)) {
-        return { status: 'failed', reason: `Safety violation: Target ${targetObs.name} is protected (owner/friend).` };
+      const resolution = resolveAndValidateTarget(bot, params.targetId, ctx.observation, ctx.config, 4.5);
+      if (!resolution.valid) {
+        return { status: 'failed', reason: resolution.reason || 'Invalid combat target.' };
       }
-
-      const rawEntity = bot.entities[targetObs.rawId];
-      if (!rawEntity) return { status: 'failed', reason: 'Target entity no longer exists.' };
+      const rawEntity = resolution.rawEntity;
+      const targetObs = resolution.targetObs!;
 
       // Auto equip best sword or axe if available
-      const bestWeapon = bot.inventory.items().find((i) => i.name.endsWith('_sword')) || bot.inventory.items().find((i) => i.name.endsWith('_axe'));
+      const bestWeapon =
+        bot.inventory?.items().find((i) => i.name.endsWith('_sword')) ||
+        bot.inventory?.items().find((i) => i.name.endsWith('_axe'));
       if (bestWeapon && bot.heldItem?.type !== bestWeapon.type) {
         try {
           await bot.equip(bestWeapon, 'hand');
@@ -41,9 +39,9 @@ export const combatActions: ActionDef[] = [
       if (dist > 3.0) {
         try {
           const goal = new goals.GoalFollow(rawEntity, 2.5);
-          (bot as any).pathfinder.setGoal(goal, true);
-          await new Promise((res) => setTimeout(res, 1000));
-          (bot as any).pathfinder.setGoal(null);
+          (bot as any).pathfinder?.setGoal(goal, true);
+          await new Promise((res) => setTimeout(res, 800));
+          (bot as any).pathfinder?.setGoal(null);
         } catch {}
       }
 
@@ -102,14 +100,15 @@ export const combatActions: ActionDef[] = [
       return obs.vitals.isAlive && (Boolean(inv['bow']) || Boolean(inv['crossbow'])) && Boolean(inv['arrow']);
     },
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      const targetObs = ctx.observation.entities.find((e) => e.id === params.targetId);
-      if (!targetObs) return { status: 'failed', reason: 'Target not found.' };
+      const resolution = resolveAndValidateTarget(bot, params.targetId, ctx.observation, ctx.config, 24);
+      if (!resolution.valid) {
+        return { status: 'failed', reason: resolution.reason || 'Invalid shoot target.' };
+      }
+      const rawEntity = resolution.rawEntity;
+      const targetObs = resolution.targetObs!;
 
-      const bowItem = bot.inventory.items().find((i) => i.name === 'bow' || i.name === 'crossbow');
+      const bowItem = bot.inventory?.items().find((i) => i.name === 'bow' || i.name === 'crossbow');
       if (!bowItem) return { status: 'failed', reason: 'No bow or crossbow in inventory.' };
-
-      const rawEntity = bot.entities[targetObs.rawId];
-      if (!rawEntity) return { status: 'failed', reason: 'Target no longer in range.' };
 
       try {
         await bot.equip(bowItem, 'hand');

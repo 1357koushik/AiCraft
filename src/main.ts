@@ -47,29 +47,39 @@ async function main() {
   process.on('SIGTERM', handleShutdown);
 
   // 6. Connect to Minecraft server
-  try {
-    const bot = await connection.connect({
-      onSpawn: (connectedBot) => {
-        logger.info(`Bot spawned at X: ${connectedBot.entity.position.x.toFixed(1)} Y: ${connectedBot.entity.position.y.toFixed(1)} Z: ${connectedBot.entity.position.z.toFixed(1)}`);
+  let agentController: AgentController | null = null;
+  let dashboard: ConsoleDashboard | null = null;
 
-        // Initialize agent loop
-        const agentController = new AgentController(
-          connectedBot,
-          config,
-          logger,
-          memory,
-          safety,
-          llmProvider
+  try {
+    await connection.connect({
+      onSpawn: (connectedBot) => {
+        logger.info(
+          `Bot spawned at X: ${connectedBot.entity.position.x.toFixed(1)} Y: ${connectedBot.entity.position.y.toFixed(1)} Z: ${connectedBot.entity.position.z.toFixed(1)}`
         );
 
-        // Initialize console dashboard
-        const dashboard = new ConsoleDashboard(agentController, memory, connection, logger);
-        dashboard.startCLI();
+        if (!agentController) {
+          // Initialize agent loop on first connection
+          agentController = new AgentController(
+            connectedBot,
+            config,
+            logger,
+            memory,
+            safety,
+            llmProvider
+          );
 
-        // Start agent loop
-        agentController.start().catch((err) => {
-          logger.error({ err }, `Agent loop terminated with error: ${err.message}`);
-        });
+          // Initialize console dashboard
+          dashboard = new ConsoleDashboard(agentController, memory, connection, logger);
+          dashboard.startCLI();
+
+          // Start agent loop
+          agentController.start().catch((err) => {
+            logger.error({ err }, `Agent loop terminated with error: ${err.message}`);
+          });
+        } else {
+          // Subsequent connection (reconnect): rebind existing controller cleanly
+          agentController.updateBotInstance(connectedBot);
+        }
       },
     });
   } catch (err: any) {

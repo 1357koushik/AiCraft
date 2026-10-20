@@ -39,7 +39,7 @@ export const worldInteractionActions: ActionDef[] = [
       if (!entObs) return { status: 'failed', reason: 'Entity not found.' };
 
       const rawEntity = bot.entities[entObs.rawId];
-      if (!rawEntity) return { status: 'failed', reason: 'Entity no longer available.' };
+      if (!rawEntity || (rawEntity as any).isValid === false) return { status: 'failed', reason: 'Entity no longer available or alive.' };
 
       try {
         await bot.activateEntity(rawEntity);

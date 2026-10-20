@@ -203,8 +203,10 @@ export function extractBlocks(bot: Bot, config: AppConfig): BlocksState {
 
   const legend: Record<string, string> = {
     P: 'Bot',
-    '.': 'Passable/Ground',
-    '#': 'Wall/Solid block',
+    '.': 'Passable/Ground (solid floor support & clear headroom)',
+    '#': 'Wall/Solid obstacle',
+    v: 'Drop/Cliff/Gap (no solid floor support)',
+    '?': 'Unknown/Unloaded chunk data',
     T: 'Wood/Tree',
     '~': 'Foliage/Leaves',
     W: 'Water',
@@ -226,24 +228,35 @@ export function extractBlocks(bot: Bot, config: AppConfig): BlocksState {
       const bFeet = bot.blockAt(feetPos.offset(x, 0, z));
       const bHead = bot.blockAt(feetPos.offset(x, 1, z));
 
-      const fName = bFeet?.name || 'air';
-      const gName = bGround?.name || 'air';
+      // 1. Unloaded / Unknown block data
+      if (bFeet === null || bGround === null) {
+        row.push('?');
+        continue;
+      }
 
+      const fName = bFeet.name || 'air';
+      const gName = bGround.name || 'air';
+
+      // 2. Liquids and hazards
       if (fName === 'water' || gName === 'water') {
         row.push('W');
       } else if (fName === 'lava' || gName === 'lava' || fName === 'fire') {
         row.push('L');
-      } else if (fName.includes('log')) {
+      } else if (fName.includes('log') || bHead?.name?.includes('log')) {
         row.push('T');
-      } else if (fName.includes('leaves')) {
+      } else if (fName.includes('leaves') || bHead?.name?.includes('leaves')) {
         row.push('~');
       } else if (fName.includes('ore') || gName.includes('ore')) {
         row.push('O');
       } else if (['crafting_table', 'chest', 'furnace', 'barrel'].includes(fName)) {
         row.push('C');
-      } else if (bFeet?.boundingBox === 'block' || bHead?.boundingBox === 'block') {
+      } else if (bFeet.boundingBox === 'block' || bHead?.boundingBox === 'block') {
         row.push('#');
+      } else if (bGround.boundingBox !== 'block') {
+        // Air beneath feet: cliff / unsupported drop / void!
+        row.push('v');
       } else {
+        // Confirmed solid floor support with clear headroom
         row.push('.');
       }
     }

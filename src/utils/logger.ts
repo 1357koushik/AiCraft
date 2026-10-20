@@ -22,10 +22,23 @@ export interface StepRecord {
   error?: string;
 }
 
+export type ActionLifecycleEvent = 'start' | 'completed' | 'failed' | 'interrupted' | 'timeout' | 'preempted';
+
+export interface ActionLogContext {
+  actionId?: string;
+  action: string;
+  event: ActionLifecycleEvent;
+  params?: any;
+  status?: string;
+  reason?: string;
+  durationMs?: number;
+}
+
 export class AgentLogger {
   private pinoLogger: pino.Logger;
   private jsonlFilePath: string;
   private config: AppConfig;
+  private recentErrors = new Map<string, { count: number; lastLogged: number }>();
 
   constructor(config: AppConfig) {
     this.config = config;
@@ -68,6 +81,27 @@ export class AgentLogger {
       fs.appendFileSync(this.jsonlFilePath, line, 'utf-8');
     } catch (err: any) {
       this.pinoLogger.error({ err }, 'Failed to write step record to JSONL');
+    }
+  }
+
+  public logActionEvent(ctx: ActionLogContext): void {
+    const safeParams = ctx.params ? JSON.stringify(ctx.params) : '';
+    const safeMsg = `[Action:${ctx.event.toUpperCase()}] id=${ctx.actionId || 'none'} action=${ctx.action}${ctx.status ? ` status=${ctx.status}` : ''}${ctx.reason ? ` reason="${ctx.reason}"` : ''}${safeParams ? ` params=${safeParams}` : ''}`;
+    this.pinoLogger.info(safeMsg);
+  }
+
+  public errorDebounced(message: string, debounceMs: number = 5000): void {
+    const now = Date.now();
+    const entry = this.recentErrors.get(message);
+    if (!entry || now - entry.lastLogged > debounceMs) {
+      if (entry && entry.count > 1) {
+        this.pinoLogger.error(`${message} (repeated ${entry.count} times in last ${debounceMs / 1000}s)`);
+      } else {
+        this.pinoLogger.error(message);
+      }
+      this.recentErrors.set(message, { count: 1, lastLogged: now });
+    } else {
+      entry.count++;
     }
   }
 

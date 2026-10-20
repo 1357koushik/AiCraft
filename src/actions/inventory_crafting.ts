@@ -270,8 +270,8 @@ export const inventoryCraftingActions: ActionDef[] = [
     getAvailableChoices: () => ({
       item: ['wooden_pickaxe', 'stone_pickaxe', 'wooden_axe', 'stone_axe', 'wooden_sword', 'stone_sword', 'crafting_table'],
     }),
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      return techniqueCraftPipeline(bot, params.item || 'wooden_pickaxe');
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      return techniqueCraftPipeline(bot, params.item || 'wooden_pickaxe', ctx.abortSignal);
     },
   },
 ];

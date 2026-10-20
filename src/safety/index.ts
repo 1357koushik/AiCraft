@@ -1,10 +1,83 @@
+import { Bot } from 'mineflayer';
 import { AppConfig } from '../config/index.js';
-import { Observation } from '../types/index.js';
-import { isWithinBounds } from '../utils/math.js';
+import { Observation, EntityInfo } from '../types/index.js';
+import { isWithinBounds, distance3D } from '../utils/math.js';
 
 export interface SafetyCheckResult {
   allowed: boolean;
   reason?: string;
+}
+
+export interface TargetResolutionResult {
+  valid: boolean;
+  rawEntity?: any;
+  targetObs?: EntityInfo;
+  reason?: string;
+}
+
+/**
+ * Resolves a target entity ID from an observation and verifies the live entity state.
+ * Prevents targeting dead entities, despawned entities, ID reuse, and protected entities.
+ */
+export function resolveAndValidateTarget(
+  bot: Bot,
+  targetId: string,
+  observation: Observation,
+  config: AppConfig,
+  maxReach: number = 4.5
+): TargetResolutionResult {
+  // 1. Look up target in the observation snapshot that generated the request
+  const targetObs = observation.entities.find((e) => e.id === targetId || e.name === targetId);
+  if (!targetObs) {
+    return { valid: false, reason: `Target entity '${targetId}' was not found in the decision observation.` };
+  }
+
+  // 2. Safety checks against owner and friends
+  if (targetObs.isOwner || config.agent.owners.includes(targetObs.name) || config.agent.friends.includes(targetObs.name)) {
+    return { valid: false, reason: `Safety invariant violation: '${targetObs.name}' is an owner or friend.` };
+  }
+  if (config.safety.protectedEntities.includes(targetObs.type)) {
+    return { valid: false, reason: `Safety invariant violation: '${targetObs.type}' is a protected entity type.` };
+  }
+
+  // 3. Look up the live entity by rawId
+  const rawEntity = bot.entities[targetObs.rawId];
+  if (!rawEntity) {
+    return { valid: false, reason: `Target entity '${targetObs.name}' (rawId ${targetObs.rawId}) is no longer loaded in the world.` };
+  }
+
+  // 4. Validate that the live entity is alive and valid
+  if ((rawEntity as any).isValid === false) {
+    return { valid: false, reason: `Target entity '${targetObs.name}' is no longer valid.` };
+  }
+  if (typeof (rawEntity as any).health === 'number' && (rawEntity as any).health <= 0) {
+    return { valid: false, reason: `Target entity '${targetObs.name}' is dead.` };
+  }
+
+  // 5. Prevent entity ID reuse / stale substitution:
+  // Check that the live entity type matches the snapshot type
+  const currentType = rawEntity.name || rawEntity.type || 'unknown';
+  if (currentType !== targetObs.type && rawEntity.username !== targetObs.name) {
+    return {
+      valid: false,
+      reason: `Target entity ID mismatch: entity was '${targetObs.type}' but is now '${currentType}'. ID was reused by server.`,
+    };
+  }
+
+  // 6. Check distance from bot
+  if (bot.entity) {
+    const dist = distance3D(bot.entity.position, rawEntity.position);
+    if (dist > maxReach) {
+      return {
+        valid: false,
+        rawEntity,
+        targetObs,
+        reason: `Target '${targetObs.name}' is out of reach (${dist.toFixed(1)}m > max ${maxReach}m).`,
+      };
+    }
+  }
+
+  return { valid: true, rawEntity, targetObs };
 }
 
 export class SafetyManager {
@@ -50,10 +123,10 @@ export class SafetyManager {
       }
       const rawCmd = String(params?.command || '').trim();
       // Block command chaining or injection characters
-      if (/[\n\r;&|]/.test(rawCmd)) {
+      if (/[\n\r;&|`$><\\()]/.test(rawCmd)) {
         return {
           allowed: false,
-          reason: 'Command chaining or control characters are forbidden.',
+          reason: 'Command injection rejected: control characters, chaining, pipes, or shell operators are forbidden.',
         };
       }
       const cleanedCmd = rawCmd.replace(/^\//, '').trim();

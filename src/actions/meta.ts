@@ -120,14 +120,31 @@ export const metaActions: ActionDef[] = [
         return { status: 'failed', reason: 'Safety violation: Command execution is disabled in config.' };
       }
 
-      const cmd = String(params.command || '').trim().replace(/^\//, '');
-      const baseCmd = cmd.split(' ')[0];
-      if (!ctx.config.safety.commandAllowlist.includes(baseCmd)) {
-        return { status: 'failed', reason: `Command '${baseCmd}' is not in the allowlist.` };
+      const rawCmd = String(params.command || '').trim();
+      if (!rawCmd) {
+        return { status: 'failed', reason: 'Empty command string.' };
       }
 
+      // Reject shell operators, command chaining, redirection, control characters
+      if (/[\n\r;&|`$><\\]/.test(rawCmd)) {
+        return {
+          status: 'failed',
+          reason: 'Command injection rejected: control characters, chaining, pipes, or shell operators are forbidden.',
+        };
+      }
+
+      const cmd = rawCmd.replace(/^\//, '').trim();
+      const tokens = cmd.split(/\s+/);
+      const baseCmd = tokens[0]?.toLowerCase();
+      const allowlist = ctx.config.safety.commandAllowlist.map((c: string) => c.toLowerCase());
+
+      if (!baseCmd || !allowlist.includes(baseCmd)) {
+        return { status: 'failed', reason: `Command '${baseCmd}' is not permitted by command allowlist.` };
+      }
+
+      // Strictly execute as in-game Minecraft chat command (/cmd), NEVER as OS shell
       bot.chat(`/${cmd}`);
-      return { status: 'success', reason: `Executed command: /${cmd}` };
+      return { status: 'success', reason: `Executed in-game command: /${cmd}` };
     },
   },
 ];

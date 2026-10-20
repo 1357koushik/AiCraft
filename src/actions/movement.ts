@@ -30,6 +30,10 @@ export const movementActions: ActionDef[] = [
       const range = params.range || 1.5;
       let targetPos: Vec3 | null = null;
 
+      if (ctx.abortSignal?.aborted) {
+        return { status: 'interrupted', reason: 'Goto cancelled before start.' };
+      }
+
       if (params.targetId) {
         if (params.targetId.startsWith('e')) {
           const ent = ctx.observation.entities.find((e) => e.id === params.targetId);
@@ -52,17 +56,56 @@ export const movementActions: ActionDef[] = [
       }
 
       const dist = distance3D(bot.entity.position, targetPos);
+      const maxAllowedDist = Math.max(32, (ctx.config.perception.scanRadius || 16) * 3);
+      if (dist > maxAllowedDist) {
+        return {
+          status: 'failed',
+          reason: `Target position too far away (${dist.toFixed(1)} blocks > max ${maxAllowedDist} blocks). Coordinates must be bounded.`,
+        };
+      }
+
+      // Pre-check destination safety if chunk loaded
+      const destBlock = bot.blockAt(targetPos);
+      const destGround = bot.blockAt(targetPos.offset(0, -1, 0));
+      if (destBlock?.name === 'lava' || destGround?.name === 'lava' || destBlock?.name === 'fire') {
+        return { status: 'failed', reason: 'Target destination is an unsafe lava or fire hazard.' };
+      }
+
       if (dist <= range) {
         return { status: 'success', reason: `Already within range (${dist.toFixed(1)} blocks).` };
       }
 
+      let onAbort: (() => void) | null = null;
       try {
         updatePathfinderMovements(bot);
         const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, range);
+
+        if (ctx.abortSignal) {
+          onAbort = () => {
+            try {
+              (bot as any).pathfinder?.stop();
+              (bot as any).pathfinder?.setGoal(null);
+            } catch {}
+            bot.clearControlStates();
+          };
+          ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+        }
+
         await (bot as any).pathfinder.goto(goal);
         return { status: 'success', reason: `Reached target at ${targetPos.x}, ${targetPos.y}, ${targetPos.z}` };
       } catch (err: any) {
+        if (ctx.abortSignal?.aborted) {
+          return { status: 'interrupted', reason: 'Navigation cancelled by preemption signal.' };
+        }
         return { status: 'failed', reason: `Pathfinding failed: ${err.message || 'path unreachable'}` };
+      } finally {
+        if (ctx.abortSignal && onAbort) {
+          ctx.abortSignal.removeEventListener('abort', onAbort);
+        }
+        try {
+          (bot as any).pathfinder?.stop();
+        } catch {}
+        bot.clearControlStates();
       }
     },
   },
@@ -292,8 +335,8 @@ export const movementActions: ActionDef[] = [
       height: { type: 'number', description: 'Blocks to pillar up (1 to 8, default 3)' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      return techniquePillarUp(bot, params.height || 3);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      return techniquePillarUp(bot, params.height || 3, ctx.abortSignal);
     },
   },
   {
@@ -306,8 +349,8 @@ export const movementActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
     getAvailableChoices: () => ({ direction: ['forward', 'north', 'south', 'east', 'west'] }),
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      return techniqueBridge(bot, params.direction || 'forward', params.distance || 4);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      return techniqueBridge(bot, params.direction || 'forward', params.distance || 4, ctx.abortSignal);
     },
   },
 ];

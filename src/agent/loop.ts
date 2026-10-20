@@ -5,7 +5,7 @@ import { MemoryManager } from '../memory/index.js';
 import { SafetyManager } from '../safety/index.js';
 import { ReflexLayer } from './reflex.js';
 import { StuckDetector } from './stuck.js';
-import { ActionArbiter } from './arbiter.js';
+import { ActionArbiter, ActionPriority } from './arbiter.js';
 import { buildObservation } from '../perception/index.js';
 import { AvailabilityEngine } from '../actions/availability.js';
 import { ILLMProvider, Observation, RecentEventsState, ActionResult } from '../types/index.js';
@@ -231,15 +231,51 @@ export class AgentController {
       this.memory.state.currentGoal = decision.goal;
     }
 
-    // 7. Execute action(s) in order with immediate revalidation before each action
+    // 7. Execute action(s) in order with fresh observation before each step
     const executedActions: any[] = [];
     const actionResults: ActionResult[] = [];
 
-    const actionsToRun = decision.actions.slice(0, this.config.agent.maxActionsPerStep);
+    const maxActions = Math.min(this.config.agent.maxActionsPerStep || 1, 5);
+    const actionsToRun = decision.actions.slice(0, maxActions);
+    const batchStartTime = Date.now();
+    const maxBatchDurationMs = this.config.agent.requestTimeoutMs || 30000;
 
-    for (const item of actionsToRun) {
+    for (let actionIdx = 0; actionIdx < actionsToRun.length; actionIdx++) {
+      const item = actionsToRun[actionIdx];
+
+      // Check overall batch timeout
+      if (Date.now() - batchStartTime > maxBatchDurationMs) {
+        actionResults.push({
+          status: 'interrupted',
+          reason: `Multi-action execution time limit (${maxBatchDurationMs}ms) exceeded.`,
+        });
+        break;
+      }
+
+      // Check bot vitality before every action in the batch
+      if (!this.bot.entity || (this.bot as any).isAlive === false || (this.bot.health !== undefined && this.bot.health <= 0)) {
+        actionResults.push({
+          status: 'failed',
+          reason: 'Bot died or is dead; aborting remaining multi-action sequence.',
+        });
+        break;
+      }
+
+      // Rebuild fresh observation for subsequent actions in the sequence so assumptions are never stale
+      const currentObs: Observation =
+        actionIdx === 0
+          ? observation
+          : buildObservation(
+              this.bot,
+              this.config,
+              this.memory.state,
+              this.memory.notes,
+              this.recentEvents,
+              []
+            );
+
       // Safety check
-      const safetyCheck = this.safety.validateActionSafety(item.action, item.params, observation);
+      const safetyCheck = this.safety.validateActionSafety(item.action, item.params, currentObs);
       if (!safetyCheck.allowed) {
         this.logger.warn(`Safety rejected action ${item.action}: ${safetyCheck.reason}`);
         actionResults.push({ status: 'failed', reason: safetyCheck.reason || 'Safety rejected' });
@@ -251,7 +287,7 @@ export class AgentController {
         item.action,
         item.params,
         this.bot,
-        observation,
+        currentObs,
         this.config,
         this.logger.logger
       );
@@ -262,24 +298,25 @@ export class AgentController {
         break;
       }
 
-      // Execute action with timeout
+      // Execute action with timeout and arbiter coordination
       this.logger.info(`Executing action: ${item.action} params: ${JSON.stringify(item.params)}`);
       executedActions.push(item);
 
-      this.arbiter.startAction(item.action);
+      const { actionId, signal } = this.arbiter.startAction(item.action, ActionPriority.NORMAL, this.bot);
       let result: ActionResult;
       try {
         result = await AvailabilityEngine.executeWithTimeout(
           item.action,
           item.params,
           this.bot,
-          observation,
+          currentObs,
           this.config,
           this.logger.logger,
+          signal,
           25000
         );
       } finally {
-        this.arbiter.finishAction(item.action);
+        this.arbiter.finishAction(actionId, this.bot);
       }
 
       actionResults.push(result);
@@ -355,7 +392,8 @@ export class AgentController {
 
     // Death
     this.bot.on('death', () => {
-      this.logger.warn('Bot died! Recording death location.');
+      this.logger.warn('Bot died! Recording death location and preempting running actions.');
+      this.arbiter.preempt(this.bot, 'Bot died', ActionPriority.SURVIVAL_EMERGENCY);
       const pos = this.bot.entity?.position;
       if (pos) {
         this.memory.rememberLocation('last_death', {
@@ -365,6 +403,13 @@ export class AgentController {
         });
       }
       this.recentEvents.deathRespawn = true;
+
+      // Clean physical pathfinding and controls immediately
+      try {
+        (this.bot as any).pathfinder?.stop();
+        (this.bot as any).pathfinder?.setGoal(null);
+      } catch {}
+      this.bot.clearControlStates();
 
       // Auto respawn after 1.5s
       setTimeout(() => {
@@ -399,25 +444,61 @@ export class AgentController {
       if (block?.name) this.recentEvents.blocksBroken.push(block.name);
     });
 
-    // Entity hurt
-    this.bot.on('entityHurt', (entity: any) => {
-      if (entity === this.bot.entity) {
-        this.recentEvents.damageTaken.push({ amount: 1, source: 'damage', timeAgoMs: 0 });
+    // Entity hurt: verifies attacker from event source (Mineflayer damage_event / entityStatus)
+    this.bot.on('entityHurt', (entity: any, source?: any) => {
+      if (!entity || entity !== this.bot.entity) return;
 
-        // Immediate counter-attack / defense reflex against nearby hostile
-        if (this.reflex.isAutoAttackEnabled()) {
-          const attackRadius = this.config.safety.reflexes.autoAttackRadius || 3.8;
-          const attacker = Object.values(this.bot.entities).find((e) => {
-            if (!e || e === this.bot.entity) return false;
-            const dist = distance3D(this.bot.entity.position, e.position);
-            return dist <= attackRadius && (e.type === 'mob' || e.type === 'hostile');
-          });
-          if (attacker) {
-            this.arbiter.preempt(this.bot, `Retaliating against ${attacker.name || 'hostile'}`);
-            this.reflex.autoDefendAttacker(this.bot, attacker).catch(() => {});
-          }
+      if (!source) {
+        // Environmental or unattributed damage (fall, fire, lava, cactus, suffocation, drowning)
+        this.recentEvents.damageTaken.push({ amount: 1, source: 'environmental', timeAgoMs: 0 });
+        this.logger.info('Bot took environmental/unattributed damage; no attacker entity identified.');
+        return;
+      }
+
+      if (source === this.bot.entity) {
+        // Self-inflicted damage
+        this.recentEvents.damageTaken.push({ amount: 1, source: 'self', timeAgoMs: 0 });
+        return;
+      }
+
+      const attackerName = source.username || source.name || source.type || 'unknown';
+      this.recentEvents.damageTaken.push({ amount: 1, source: attackerName, timeAgoMs: 0 });
+      this.logger.info(`Bot hurt by attacker: ${attackerName} (type: ${source.type || 'unknown'}, id: ${source.id})`);
+
+      // Retaliation check: strictly opt-in, disabled by default
+      if (!this.reflex.isAutoAttackEnabled()) return;
+
+      // Do not override higher-priority survival emergencies (e.g. lava, drowning)
+      if (this.bot.entity) {
+        const isUnderLava = this.bot.blockAt(this.bot.entity.position)?.name === 'lava';
+        const isDrowning = Boolean((this.bot.entity as any).isInWater) && (this.bot.oxygenLevel ?? 20) < 8;
+        if (isUnderLava || isDrowning) {
+          this.logger.warn('Retaliation suppressed: immediate survival emergency in progress.');
+          return;
         }
       }
+
+      // Safety immunity checks against owner and protected friends
+      if (this.config.agent.owners.includes(attackerName) || this.config.agent.friends.includes(attackerName)) {
+        this.logger.warn(`Attacker ${attackerName} is owner or friend. Retaliation strictly forbidden.`);
+        return;
+      }
+      if (this.config.safety.protectedEntities.includes(source.type || attackerName)) {
+        this.logger.warn(`Attacker ${source.type || attackerName} is protected entity. Retaliation forbidden.`);
+        return;
+      }
+
+      // Check attacker is loaded and alive
+      const liveAttacker = this.bot.entities[source.id];
+      if (!liveAttacker || (liveAttacker as any).isValid === false) return;
+      if (typeof (liveAttacker as any).health === 'number' && (liveAttacker as any).health <= 0) return;
+
+      const dist = distance3D(this.bot.entity.position, liveAttacker.position);
+      const maxRadius = this.config.safety.reflexes.autoAttackRadius || 4.5;
+      if (dist > maxRadius) return;
+
+      this.arbiter.preempt(this.bot, `Retaliating against ${attackerName}`, ActionPriority.COMBAT_REFLEX);
+      this.reflex.autoDefendAttacker(this.bot, liveAttacker).catch(() => {});
     });
   }
 
@@ -460,5 +541,11 @@ export class AgentController {
       default:
         this.bot.chat(`Unknown command '${cmd}'. Available: !stop, !resume, !step, !attack [on|off], !goal <text>`);
     }
+  }
+
+  public updateBotInstance(newBot: Bot): void {
+    this.bot = newBot;
+    this.setupEventListeners();
+    this.logger.info('AgentController successfully rebound to new bot instance after reconnect.');
   }
 }

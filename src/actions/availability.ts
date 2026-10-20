@@ -95,6 +95,7 @@ export class AvailabilityEngine {
     obs: Observation,
     config: AppConfig,
     logger: any,
+    abortSignal?: AbortSignal,
     timeoutMs: number = 25000
   ): Promise<ActionResult> {
     const act = actionMap.get(actionName);
@@ -102,21 +103,60 @@ export class AvailabilityEngine {
       return { status: 'failed', reason: `Unknown action: "${actionName}"` };
     }
 
-    const ctx: ActionExecutionContext = { bot, observation: obs, config, logger };
+    if (abortSignal?.aborted) {
+      return { status: 'interrupted', reason: `Action "${actionName}" was aborted before execution.` };
+    }
 
-    const executionPromise = act.execute(bot, params, ctx);
+    const ctx: ActionExecutionContext = { bot, observation: obs, config, logger, abortSignal };
+
     let timer: NodeJS.Timeout | null = null;
+    let onAbort: (() => void) | null = null;
+
     const timeoutPromise = new Promise<ActionResult>((resolve) => {
       timer = setTimeout(() => {
+        try {
+          (bot as any).pathfinder?.stop();
+          (bot as any).pathfinder?.setGoal(null);
+        } catch {}
+        try {
+          bot.clearControlStates();
+          bot.deactivateItem();
+        } catch {}
         resolve({ status: 'interrupted', reason: `Action "${actionName}" timed out after ${timeoutMs}ms.` });
       }, timeoutMs);
     });
 
+    const abortPromise = new Promise<ActionResult>((resolve) => {
+      if (abortSignal) {
+        onAbort = () => {
+          try {
+            (bot as any).pathfinder?.stop();
+            (bot as any).pathfinder?.setGoal(null);
+          } catch {}
+          try {
+            bot.clearControlStates();
+            bot.deactivateItem();
+          } catch {}
+          resolve({ status: 'interrupted', reason: `Action "${actionName}" was preempted or cancelled.` });
+        };
+        if (abortSignal.aborted) {
+          onAbort();
+        } else {
+          abortSignal.addEventListener('abort', onAbort, { once: true });
+        }
+      }
+    });
+
     try {
-      const result = await Promise.race([executionPromise, timeoutPromise]);
+      const result = await Promise.race([act.execute(bot, params, ctx), timeoutPromise, abortPromise]);
       return result;
+    } catch (err: any) {
+      return { status: 'failed', reason: `Action execution error: ${err.message || 'unknown error'}` };
     } finally {
       if (timer) clearTimeout(timer);
+      if (abortSignal && onAbort) {
+        abortSignal.removeEventListener('abort', onAbort);
+      }
     }
   }
 }

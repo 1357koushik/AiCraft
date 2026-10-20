@@ -1,5 +1,6 @@
 import mineflayer, { Bot } from 'mineflayer';
 import { pathfinder } from 'mineflayer-pathfinder';
+import minecraftData from 'minecraft-data';
 import { AppConfig } from '../config/index.js';
 import { AgentLogger } from '../utils/logger.js';
 import { updatePathfinderMovements } from '../actions/techniques.js';
@@ -17,20 +18,41 @@ export class ConnectionManager {
   private bot: Bot | null = null;
   private reconnectAttempts = 0;
   private shouldReconnect = true;
+  private isReconnecting = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(config: AppConfig, logger: AgentLogger) {
     this.config = config;
     this.logger = logger;
+
+    // Verify local runtime and data version compatibility
+    this.verifyEnvironmentCompatibility();
   }
 
   public get currentBot(): Bot | null {
     return this.bot;
   }
 
+  private verifyEnvironmentCompatibility(): void {
+    const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+    if (nodeMajor < 20) {
+      this.logger.warn(`Node.js version is ${process.version}. Minecraft Java 1.21.6 Mineflayer 4.x officially requires Node.js >= 20 (recommended Node 24 LTS).`);
+    }
+
+    try {
+      const mcData = (minecraftData as any)('1.21.6');
+      if (mcData) {
+        this.logger.info(`Verified target Minecraft Java 1.21.6 protocol: ${mcData.version.version} (Data Version: 4435).`);
+      }
+    } catch (err: any) {
+      this.logger.error(`Failed loading minecraft-data for version 1.21.6: ${err.message}`);
+    }
+  }
+
   public async connect(events?: ConnectionEvents): Promise<Bot> {
     return new Promise((resolve, reject) => {
       this.logger.info(
-        `Connecting bot to ${this.config.server.host}:${this.config.server.port} as '${this.config.server.username}' (MC ${this.config.server.version})...`
+        `Connecting bot to ${this.config.server.host}:${this.config.server.port} as '${this.config.server.username}' (Target: MC ${this.config.server.version})...`
       );
 
       const options: mineflayer.BotOptions = {
@@ -42,14 +64,32 @@ export class ConnectionManager {
         checkTimeoutInterval: 30000,
       };
 
-      const bot = mineflayer.createBot(options);
+      let bot: Bot;
+      try {
+        bot = mineflayer.createBot(options);
+      } catch (err: any) {
+        this.logger.error({ err }, `Failed creating Mineflayer client: ${err.message}`);
+        reject(err);
+        return;
+      }
       this.bot = bot;
 
-      // Attach pathfinder
+      // Attach pathfinder plugin
       bot.loadPlugin(pathfinder);
 
       bot.once('spawn', () => {
         this.reconnectAttempts = 0;
+        this.isReconnecting = false;
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+
+        // Verify connected server version
+        if (bot.version !== '1.21.6') {
+          this.logger.warn(`Connected server version '${bot.version}' differs from expected target '1.21.6'.`);
+        }
+
         this.logger.info(`Bot successfully spawned in world as '${bot.username}'!`);
 
         // Configure pathfinder movements with smart scaffolding, digging, and 1x1 pillaring
@@ -97,31 +137,63 @@ export class ConnectionManager {
 
   public disconnect(): void {
     this.shouldReconnect = false;
+    this.isReconnecting = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.bot) {
-      this.bot.quit();
+      try {
+        this.bot.quit();
+      } catch {}
       this.bot = null;
     }
   }
 
   private handleReconnect(events?: ConnectionEvents): void {
-    if (this.reconnectAttempts >= this.config.server.reconnectMaxAttempts) {
-      this.logger.error(`Max reconnect attempts (${this.config.server.reconnectMaxAttempts}) reached. Giving up.`);
+    if (!this.shouldReconnect) return;
+
+    if (this.isReconnecting) {
+      this.logger.debug('Reconnect loop already scheduled or running.');
       return;
     }
 
+    if (this.reconnectAttempts >= this.config.server.reconnectMaxAttempts) {
+      this.logger.error(`Max reconnect attempts (${this.config.server.reconnectMaxAttempts}) reached. Giving up.`);
+      this.isReconnecting = false;
+      return;
+    }
+
+    this.isReconnecting = true;
     this.reconnectAttempts++;
-    // Exponential backoff with jitter
+
+    // Bounded exponential backoff with jitter
     const delay = Math.min(
       this.config.server.reconnectBaseDelayMs * Math.pow(1.5, this.reconnectAttempts - 1),
       this.config.server.reconnectMaxDelayMs
     );
 
-    this.logger.info(`Reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${this.reconnectAttempts}/${this.config.server.reconnectMaxAttempts})...`);
-    setTimeout(() => {
+    this.logger.info(
+      `Reconnecting in ${(delay / 1000).toFixed(1)}s (attempt ${this.reconnectAttempts}/${this.config.server.reconnectMaxAttempts})...`
+    );
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       if (this.shouldReconnect) {
-        this.connect(events).catch((err) => {
-          this.logger.error(`Reconnect attempt ${this.reconnectAttempts} failed: ${err.message}`);
-        });
+        this.connect(events)
+          .then(() => {
+            this.isReconnecting = false;
+          })
+          .catch((err) => {
+            this.logger.error(`Reconnect attempt ${this.reconnectAttempts} failed: ${err.message}`);
+            this.isReconnecting = false;
+            // Schedule next attempt
+            if (this.shouldReconnect) {
+              this.handleReconnect(events);
+            }
+          });
+      } else {
+        this.isReconnecting = false;
       }
     }, delay);
   }

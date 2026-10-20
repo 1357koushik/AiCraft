@@ -10,9 +10,9 @@
 3. [Perception Engine Code Logic](#3-perception-engine-code-logic)
 4. [Action Engine & Availability Validation](#4-action-engine--availability-validation)
 5. [Autonomous Physical Techniques & Skills (`src/actions/techniques.ts`)](#5-autonomous-physical-techniques--skills)
-6. [Emergency Reflex Layer & Auto-Attack Mod (`src/agent/reflex.ts`)](#6-emergency-reflex-layer--auto-attack-mod)
-7. [LLM Providers, JSON Repair & Schema Contract](#7-llm-providers-json-repair--schema-contract)
-8. [Safety Invariants & Boundary Guards (`src/safety/index.ts`)](#8-safety-invariants--boundary-guards)
+6. [Emergency Reflex Layer, Retaliation & Action Arbiter](#6-emergency-reflex-layer-retaliation--action-arbiter)
+7. [Robust LLM Parsing, Balanced Extraction & Schema Contract](#7-robust-llm-parsing-balanced-extraction--schema-contract)
+8. [Safety Invariants, Entity Snapshot Guards & Command Boundaries](#8-safety-invariants-entity-snapshot-guards--command-boundaries)
 9. [Persistent Memory & Goal Tracking (`src/memory/index.ts`)](#9-persistent-memory--goal-tracking)
 10. [Dashboard, In-Game Control & Replay Tool](#10-dashboard-in-game-control--replay-tool)
 11. [Testing Suite & Verification Results](#11-testing-suite--verification-results)
@@ -24,12 +24,13 @@
 - **Target Game Version**: Minecraft Java Edition **1.21.6**
 - **Protocol Version**: **771** | **Data Version**: **4435**
 - **Runtime**: **Node.js 24 LTS** (or Node 20+) with **TypeScript 5.5+** (ES2022 target, NodeNext modules).
-- **Core Libraries**:
-  - `mineflayer` (>= 4.39.0, protocol 771 compatible)
-  - `mineflayer-pathfinder` (A* pathfinding, dynamic block breaking, 1x1 pillaring, and bridging)
-  - `minecraft-data` (1.21.6 block hardness, recipes, tool requirements, item attributes)
-  - `zod` (strict schema validation of responses and runtime configurations)
-  - `pino` + `pino-pretty` (structured logging with secret redaction and per-step JSONL output)
+- **Core Dependencies (Pinned Versions)**:
+  - `mineflayer`: `4.39.0` (protocol 771 compatible)
+  - `mineflayer-pathfinder`: `2.4.5` (A* pathfinding, dynamic block breaking, 1x1 pillaring, and bridging)
+  - `minecraft-data`: `3.117.0` (1.21.6 block hardness, recipes, tool requirements, item attributes)
+  - `vec3`: `0.1.10`
+  - `zod`: `^3.23.8` (strict schema validation of responses and runtime configurations)
+  - `pino`: `^9.4.0` + `pino-pretty`: `^11.2.2` (structured logging with deduplication, secret redaction, and per-step JSONL output)
 
 ### Design Philosophy
 1. **The LLM decides *WHAT* to do; Code decides *HOW* to do it**:
@@ -38,6 +39,8 @@
    Lava escape, breathing when drowning, auto-eating when starving, and retaliation against hostile attackers run in sub-second code reflexes without waiting for a 3–8 second LLM inference cycle.
 3. **Double Availability Checking**:
    Actions are checked for legality before being presented in the prompt catalog, and **re-checked immediately before execution** against the current world state.
+4. **Resilient Lifecycle & Single Controller Binding**:
+   A single `AgentController` instance persists across network reconnections with stateful locking (`isReconnecting`), cleaning up stale timers and binding cleanly to the new `bot` instance via `updateBotInstance()`.
 
 ---
 
@@ -53,74 +56,79 @@
                   +----------------------------------------------+
                   |          Mineflayer Connection Manager       |
                   |     - Auto-reconnect with exponential backoff|
+                  |     - Reconnect storm locking & timer cleanup|
                   |     - Pathfinder setup & Movement injection  |
                   +----------------------------------------------+
                                        |
-                   +-------------------+-------------------+
-                   |                                       |
-                   v                                       v
-        [Physical World Events]                [Autonomous Reflex Layer]
-     (health, blockBreak, chat,                 (Sub-second response:
-       entityHurt, time, death)                  Auto-Attack, Auto-Eat,
-                   |                             Lava/Drowning Escape)
-                   v                                       |
-+------------------------------------+                     |
-|         Perception Engine          |                     |
-| - Vitals (health, food, armor)     |                     |
-| - Inventory & live recipe querying |                     |
-| - 9x9 Local ASCII map & hazards    |                     |
-| - Short-ID Entity tracking (e1...) |                     |
-+------------------------------------+                     |
-                   |                                       |
-                   v                                       |
-+------------------------------------+                     |
-|        Availability Engine         |                     |
-| - Filters illegal actions          |                     |
-| - Injects legal parameter choices  |                     |
-+------------------------------------+                     |
-                   |                                       |
-                   v                                       |
-+------------------------------------+                     |
-|           Prompt Builder           |                     |
-| - Token budget compaction          |                     |
-| - Injects history & memory goals   |                     |
-+------------------------------------+                     |
-                   |                                       |
-                   v                                       |
-+------------------------------------+                     |
-|            LLM Provider            |                     |
-| (LM Studio / OpenAI / Anthropic)   |                     |
-+------------------------------------+                     |
-                   | (JSON Response)                       |
-                   v                                       |
-+------------------------------------+                     |
-|      Parser & Zod Validator        |                     |
-| - Strips code fences, fixes braces |                     |
-| - Retries up to 2x on schema fail  |                     |
-+------------------------------------+                     |
-                   |                                       |
-                   v                                       |
-+------------------------------------+                     |
-|        Safety Guard & Pre-Check    |                     |
-| - Strictly forbids owner attacks   |                     |
-| - Revalidates current world state  |                     |
-+------------------------------------+                     |
-                   |                                       |
-                   v                                       |
-+------------------------------------+                     |
-|         Action Executors           |<--------------------+
-| - Movement, Mining, Building       | (Fires if reflex triggered)
-| - Physical Skills (Pillar, Bridge) |
-| - Crafting Pipeline & Combat       |
-+------------------------------------+
-                   |
-                   v
-+------------------------------------+
-|    Memory & Structured Logging     |
-| - Rolling step history             |
-| - Persistent per-world JSON data   |
-| - JSONL step record written        |
-+------------------------------------+
+                    +-------------------+-------------------+
+                    |                                       |
+                    v                                       v
+         [Physical World Events]                [Autonomous Reflex Layer]
+      (health, blockBreak, chat,                 (Sub-second response:
+        entityHurt, time, death)                  Auto-Attack, Auto-Eat,
+                    |                             Lava/Drowning Escape)
+                    v                                       |
+ +------------------------------------+                     |
+ |         Perception Engine          |                     |
+ | - Vitals (health, food, armor)     |                     |
+ | - Inventory & live recipe querying |                     |
+ | - 9x9 Local ASCII map & hazards    |                     |
+ | - Short-ID Entity tracking (e1...) |                     |
+ +------------------------------------+                     |
+                    |                                       |
+                    v                                       |
+ +------------------------------------+                     |
+ |        Availability Engine         |                     |
+ | - Filters illegal actions          |                     |
+ | - Injects legal parameter choices  |                     |
+ +------------------------------------+                     |
+                    |                                       |
+                    v                                       |
+ +------------------------------------+                     |
+ |           Prompt Builder           |                     |
+ | - Token budget compaction          |                     |
+ | - Injects history & memory goals   |                     |
+ +------------------------------------+                     |
+                    |                                       |
+                    v                                       |
+ +------------------------------------+                     |
+ |            LLM Provider            |                     |
+ | (LM Studio / OpenAI / Anthropic)   |                     |
+ +------------------------------------+                     |
+                    | (Raw String / Markdown Response)      |
+                    v                                       |
+ +------------------------------------+                     |
+ |      Parser & Balanced Extractor   |                     |
+ | - Balanced brace scanner in strings|                     |
+ | - Strict Zod + KNOWN_ACTION_NAMES  |                     |
+ | - Bounded retries (up to 2x)       |                     |
+ +------------------------------------+                     |
+                    |                                       |
+                    v                                       |
+ +------------------------------------+                     |
+ |   Safety Guard & Snapshot Check    |                     |
+ | - resolveAndValidateTarget check   |                     |
+ | - Owner/friend combat immunity     |                     |
+ | - Command injection sanitation     |                     |
+ +------------------------------------+                     |
+                    |                                       |
+                    v                                       |
+ +------------------------------------+                     |
+ |   Action Arbiter & Execution Loop  |<--------------------+
+ | - Priority preemption (10->50->80->100)                  |
+ | - Per-action unique ID tracking    | (Preempts if reflex fires)
+ | - Fresh observation before actions |
+ | - Physical Skills & Techniques     |
+ +------------------------------------+
+                    |
+                    v
+ +------------------------------------+
+ |    Memory & Structured Logging     |
+ | - Rolling step history             |
+ | - Persistent per-world JSON data   |
+ | - JSONL step record written        |
+ | - Deduplicated error logging       |
+ +------------------------------------+
 ```
 
 ---
@@ -130,7 +138,7 @@
 The perception system converts raw Mineflayer internals and loaded chunk packets into clean, deterministic data structures without guessing or hallucinating unsupported fields.
 
 ### 3.1 Vitals & Movement State (`src/perception/vitals.ts`)
-- **Health & Armor**: Measures raw health, food saturation, and computes effective armor protection points and armor toughness by inspecting worn armor slots (`leather`, `chainmail`, `iron`, `diamond`, `netherrite`).
+- **Health & Armor**: Measures raw health, food saturation, and computes effective armor protection points and armor toughness by inspecting worn armor slots (`leather`, `chainmail`, `iron`, `diamond`, `netherite`).
 - **Movement State**: Reads on-ground status, in-water flags, climbing states (ladder/vine detection), swimming, jumping, and fall distance.
 - **Burning/Freezing**: Reads entity metadata bitmasks to observe burning state and powder-snow freezing.
 
@@ -140,14 +148,9 @@ The perception system converts raw Mineflayer internals and loaded chunk packets
 - **Craftable Now**: Interrogates `bot.recipesFor(candidateItem.id, null, 1, craftingTable)` across 35+ core items (tools, weapons, armor, containers, torches, bread) using nearby crafting tables within reach (4.5m) to present the model with a concrete list of recipes that can be crafted with currently held ingredients.
 
 ### 3.3 Spatial Mapping & Hazard Detection (`src/perception/blocks.ts`)
-- **Walkability Engine**: Evaluates the 4 cardinal directions (North, South, East, West) from the bot's feet. Categorizes each direction as:
-  - `free`: Walkable flat terrain.
-  - `step_up`: 1-block elevation step that can be hopped up.
-  - `blocked`: Obstructed by a 2-block-tall solid wall.
-  - `drop`: A sheer drop of 3 or more blocks.
-  - `water` / `lava`: Liquid hazards.
+- **Walkability Engine**: Evaluates cardinal directions from the bot's feet. Categorizes each direction as `free`, `step_up`, `blocked`, `drop`, `water`, or `lava`.
 - **Local Map Grid (9x9 ASCII)**:
-  Samples a horizontal slice around the bot from 2 blocks below feet to 3 blocks above. Outputs an ASCII grid:
+  Samples a horizontal slice around the bot from 2 blocks below feet to 3 blocks above.
   ```
   . . . . . . . . .
   . . # # # . . . .
@@ -155,7 +158,18 @@ The perception system converts raw Mineflayer internals and loaded chunk packets
   . . . P . . ~ . .
   . . . . . . . . .
   ```
-  *Legend: `P` = Bot, `.` = Passable ground, `#` = Solid block, `T` = Wood log, `~` = Foliage/leaves, `W` = Water, `L` = Lava, `O` = Ore, `C` = Container/Crafting table.*
+  *Legend & Safety Semantics*:
+  - `P` = Bot's current position.
+  - `.` = **Passable solid ground with clear headroom** (strictly confirmed solid support beneath feet and non-hazardous passable blocks at feet/head).
+  - `#` = Solid wall or obstruction at feet or head level.
+  - `v` = **Cliff, Drop, or Void gap** (air beneath feet with missing ground support). Air is **never** presented as passable `.` ground.
+  - `?` = **Unknown or unloaded chunk data**.
+  - `T` = Tree log / Wood.
+  - `~` = Foliage / Leaves.
+  - `W` = Water.
+  - `L` = Lava.
+  - `O` = Ore.
+  - `C` = Container / Crafting table.
 - **Hazards Scan**: Radius-6 volumetric search identifying lava, fire, cactus, sweet berry bushes, magma blocks, cobwebs, powder snow, and void drops.
 
 ### 3.4 Entity Tracking (`src/perception/entities.ts`)
@@ -174,7 +188,7 @@ The perception system converts raw Mineflayer internals and loaded chunk packets
    Because the LLM takes multiple seconds to respond, the Minecraft world can change mid-inference. Immediately before invoking the action executor, the engine re-checks if the action and its arguments are still valid (e.g. target mob didn't despawn, block didn't get destroyed).
 
 ### 4.2 Action Registry Overview
-The system registers **52 distinct verified actions** across 6 categories (dynamically verified at runtime and in test suite via `actionMap.size`):
+The system registers **52 distinct verified actions** across 6 categories (verified in `src/prompt/schema.ts` via `KNOWN_ACTION_NAMES`):
 - **Movement (13)**: `goto`, `follow`, `flee`, `move`, `jump`, `swim_up`, `sprint`, `sneak`, `look_at`, `explore`, `stop`, `pillar_up`, `bridge`.
 - **Mining & Building (12)**: `dig_block`, `mine_resource`, `chop_tree`, `place_block`, `collect_items`, `use_bucket`, `till`, `plant`, `harvest`, `mine_staircase`, `build_shelter`, `vacuum_drops`.
 - **Inventory & Crafting (11)**: `equip`, `select_hotbar`, `swap_hands`, `drop`, `eat`, `craft`, `craft_pipeline`, `open_container`, `deposit`, `withdraw`, `close_container`.
@@ -186,158 +200,127 @@ The system registers **52 distinct verified actions** across 6 categories (dynam
 
 ## 5. Autonomous Physical Techniques & Skills
 
-Located in [`src/actions/techniques.ts`](file:///b:/minecraft_ai_scratch/src/actions/techniques.ts), these routines handle complex physical mechanics autonomously.
+Located in [`src/actions/techniques.ts`](file:///b:/minecraft_ai_scratch/src/actions/techniques.ts), these routines handle complex physical mechanics autonomously with full cancellation propagation (`AbortSignal`).
 
 ### 5.1 Dynamic Pathfinder Scaffolding (`updatePathfinderMovements`)
-```ts
-export function updatePathfinderMovements(bot: Bot): Movements
-```
-- **Code Logic**: Inspects inventory for valid scaffolding items (`dirt`, `cobblestone`, `stone`, `planks`, `netherrack`). Translates item names into numeric block IDs and populates `movements.scafoldingBlocks`.
-- **Flags Enabled**:
-  - `move.canDig = true`: Automatically mines obstructive leaves, dirt, or blocks in the way to a goal.
-  - `move.allow1by1towers = true`: Enables pathfinder to place blocks beneath itself to scale walls and cliffs.
-  - `move.allowParkour = true`: Jumps 1-block gaps.
-  - `move.dontMineUnderFallingBlock = true`: Prevents pathfinder from suffocating under falling gravel/sand.
+- Inspects inventory for valid scaffolding items (`dirt`, `cobblestone`, `stone`, `planks`, `netherrack`). Translates item names into numeric block IDs and populates `movements.scafoldingBlocks`.
+- Enables dynamic block digging (`move.canDig = true`), 1x1 pillaring (`move.allow1by1towers = true`), gap jumping (`move.allowParkour = true`), and prevents suffocating under falling blocks (`move.dontMineUnderFallingBlock = true`).
 
 ### 5.2 Pillar Jump Technique (`techniquePillarUp`)
-```ts
-export async function techniquePillarUp(bot: Bot, height: number): Promise<ActionResult>
-```
-- **Code Logic**:
-  1. Finds a scaffolding block in inventory and equips it in the main hand.
-  2. Aims the bot's camera straight down (`pitch = Math.PI / 2`, where positive pitch points down in Minecraft protocol).
-  3. Sets `jump = true`.
-  4. Polls the bot's elevation until `bot.entity.position.y - startY > 1.12` (the apex of the jump).
-  5. Places the block against the block directly beneath feet in mid-air.
-  6. In a `finally` block, sets `jump = false` and waits for physics settlement.
-  7. Repeats for the requested height.
+- **Inventory Pre-Check**: Verifies that scaffolding blocks exist before initiating any jumps.
+- **Orientation Calculation**: Aims the bot's camera straight down (`pitch = Math.PI / 2`, adhering to Minecraft Java pitch conventions where positive pitch is downward).
+- **Execution & Apex Timing**: Activates `jump = true`, tracking elevation until `y - startY > 1.12` (the apex of the jump). Places the block against the `(0, 1, 0)` top face of the ground block.
+- **Post-Placement Verification**: Verifies that `bot.blockAt(startPos.floored())` is solid before assuming elevation gain.
+- **Guaranteed Cleanup**: In a `finally` block, releases `jump = false`, restores camera pitch to `0` (horizontal), and clears controls.
 
 ### 5.3 Safe Sneak-Bridging (`techniqueBridge`)
-```ts
-export async function techniqueBridge(bot: Bot, direction: string, distance: number): Promise<ActionResult>
-```
-- **Code Logic**:
-  1. Activates `sneak = true` (crouch). In Minecraft, crouching strictly prevents the player from walking off the edge of a block into open air.
-  2. Resolves cardinal direction vectors.
-  3. Detects the ledge block under the bot's feet and the open air ahead.
-  4. Looks towards the edge face and places a block against the ledge.
-  5. **Post-Placement Verification**: Re-checks `bot.blockAt(targetGroundPos)` to ensure the placed block actually manifested on the server before moving. If placement failed, aborts safely rather than stepping forward into the void.
-  6. Steps forward onto the verified new block while remaining crouched.
-  7. In a `finally` block, safely clears all control states and releases `sneak = false`.
+- **Scaffold Check**: Rejects execution upfront if zero valid bridge/scaffold blocks exist in inventory.
+- **Edge Crouch Invariant**: Activates `sneak = true`. In Minecraft, crouching strictly prevents the player from walking off the edge of a block into open air.
+- **Placement & World Verification**: Places the block against the ledge face. **Never** steps onto a block merely because the place call succeeded; queries `bot.blockAt(targetGroundPos)` to confirm `boundingBox === 'block'`. If placement failed, aborts immediately without stepping forward.
+- **Guaranteed Cleanup**: In a `finally` block, safely resets `sneak = false`, restores camera orientation, and clears controls.
 
 ### 5.4 Full Tree Harvester Macro (`techniqueChopTreeFull`)
-```ts
-export async function techniqueChopTreeFull(bot: Bot, scanRadius: number): Promise<ActionResult>
-```
-- **Code Logic**:
-  1. Paths to the base of the nearest tree trunk, automatically digging obstructive leaves along the way.
-  2. Equips the best axe.
-  3. Chops trunk logs from bottom to eye level.
-  4. If higher logs are out of reach (`distance > 4.2m`), automatically invokes `techniquePillarUp(bot, 1)` to gain height, cuts the canopy logs, and then mines the pillar blocks back down.
-  5. Automatically executes `techniqueVacuumDrops(bot, 6)` to scoop up all fallen wood, saplings, and apples.
+- Paths to the nearest tree trunk, automatically digging obstructive leaves along the way.
+- Equips the best axe and chops trunk logs from bottom to eye level.
+- If higher logs are out of reach (`distance > 4.2m`), automatically invokes `techniquePillarUp(bot, 1)` to gain height, cuts the canopy logs, and then mines the pillar blocks back down.
+- Automatically executes `techniqueVacuumDrops(bot, 6)` to scoop up all fallen wood, saplings, and apples.
 
 ### 5.5 Safe Staircase Mining (`techniqueMineStaircase`)
-```ts
-export async function techniqueMineStaircase(bot: Bot, steps: number): Promise<ActionResult>
-```
-- **Code Logic**:
-  1. Calculates the forward direction vector.
-  2. Enforces the golden survival rule: **Never dig straight down**.
-  3. Digs the eye-level block ahead, the foot-level block ahead, and the ground-level block ahead to create a safe 1x2 downward step.
-  4. Steps down forward.
-  5. Inspects light level; if dark, places a torch on the wall.
+- **Precondition & Hazard Checks Before Every Step**:
+  1. Inspects destination floor at `targetFloorPos = stepAhead.offset(0, -2, 0)`.
+  2. If floor block data is `null` (unloaded chunk), aborts safely: *"destination floor block is unknown or unloaded"*.
+  3. If liquid hazard (`lava`, `water`, `flowing_lava`) exists at the floor or step destination, aborts immediately.
+  4. If `boundingBox !== 'block'` (open air, drop, ravine, void), aborts immediately: *"unsupported drop or gap detected"*.
+  5. Inspects overhead blocks: detects unsupported falling gravel or sand that could cause suffocation.
+  6. Inspects adjacent blocks to avoid opening hidden lava or water pockets.
+- **Post-Mining Verification**: Re-checks mined positions to confirm blocks are passable before stepping down.
+- **Guaranteed Cleanup**: In a `finally` block, safely clears all movement, mining, and sneaking states.
 
 ### 5.6 Recursive Multi-Step Crafting Pipeline (`techniqueCraftPipeline`)
-```ts
-export async function techniqueCraftPipeline(bot: Bot, targetItemName: string): Promise<ActionResult>
-```
-- **Code Logic**:
-  Eliminates multiple LLM round-trips for crafting chains:
+- Eliminates LLM round-trips for crafting chains:
   - If crafting a `wooden_pickaxe`:
-    1. If logs exist, crafts planks.
-    2. If sticks are missing, crafts sticks from planks.
-    3. If crafting table is needed: checks inventory or crafts a crafting table, places it on the ground adjacent to the bot.
+    1. Crafts planks from logs.
+    2. Crafts sticks from planks.
+    3. If crafting table is needed: checks inventory or crafts a table, places it adjacent to the bot.
     4. Queries recipe for the final tool using the table and crafts it in one unified sequence.
 
 ---
 
-## 6. Emergency Reflex Layer, Auto-Attack Mod & Action Arbiter
+## 6. Emergency Reflex Layer, Retaliation & Action Arbiter
 
 ### 6.1 Action Arbiter (`src/agent/arbiter.ts`)
-To prevent asynchronous reflexes (such as auto-eating or retaliating) from conflicting with ongoing pathfinding or placement macros:
-- **Central Concurrency Coordinator**: The `ActionArbiter` maintains ownership of bot controls and tracks the active action lifecycle with `AbortController` cancellation tokens.
-- **Priority Preemption**: When an emergency reflex triggers (lava, drowning, low health, or retaliatory defense), the arbiter calls `preempt()`, which stops pathfinding, clears all controls (`bot.clearControlStates()`), deactivates held items, and safely grants control to the emergency reflex.
+- **Central Concurrency Coordinator**: Prevents conflicting actions by managing an `AbortController` cancellation token for active tasks.
+- **Action Priorities**:
+  - `ActionPriority.LOW = 10`: Background maintenance and idle tasks.
+  - `ActionPriority.NORMAL = 50`: Standard LLM planned actions.
+  - `ActionPriority.COMBAT_REFLEX = 80`: Combat retaliation and auto-attack.
+  - `ActionPriority.SURVIVAL_EMERGENCY = 100`: Immediate survival reflexes (lava, drowning, falling).
+- **Preemption Rule**: An action can only preempt the currently running action if `priority > currentAction.priority`. Survival emergencies can never be preempted by lower-priority actions.
+- **Lifecycle Action ID Guard**: Generates a unique `actionId` upon `startAction()`. `finishAction(actionId)` strictly verifies that the finishing action owns the arbiter lock, preventing stale preempted actions from stopping or resetting newer actions.
 
-### 6.2 Reflexes & Combat Defense (`src/agent/reflex.ts`)
-1. **Auto-Attack Defense Mod (`autoAttackHostiles`)**:
-   - **Opt-In Safety**: Defaults to `false` in config; activated via `config.yaml`, CLI (`attack-mode on`), or owner chat (`!attack on`).
-   - **Engagement Reach**: Default `3.8` blocks.
-   - **Attack Speed Timing**: Throttled to `650ms` (~1.5 hits/sec, matching 1.9+ weapon recovery cooldowns).
-   - **Auto-Equips** best sword or axe before swinging.
-   - **Auto Shield Block (`autoShieldBlock`)**: If facing a skeleton or exploding creeper, raises off-hand shield for 400ms to absorb damage.
-2. **Real-Time Retaliation Listener**:
-   Listens to the `entityHurt` event: preempts lower-priority actions and immediately targets the hostile mob that attacked the bot. Strictly ignores attacks from owners, friends, or protected entities.
-3. **Environmental Reflexes**:
-   - **Low Oxygen Reflex**: If `oxygen < 8` and `underwater = true`, overrides LLM and swims up (`jump = true`) until reaching surface.
-   - **Lava Escape Reflex**: Identifies safe non-lava ground rather than blindly sprinting into deeper hazards.
-   - **Critical Health Flee**: If `health <= 6.0` and a hostile mob is within 8m, triggers sprint-flee.
-   - **Auto-Eat**: Configured to `food <= 8.0` by default (avoiding food waste while safely maintaining sprint capability).
+### 6.2 Attacker Attribution & Retaliation (`src/agent/loop.ts`)
+- **Attribution via Packet Data**: Mineflayer 4.x parses Minecraft `damage_event` packets, providing `packet.sourceCauseId - 1` as `source` in `bot.emit('entityHurt', entity, source)`.
+- **Strict Distinction**:
+  - If `source` is undefined or null, damage is recorded as `'environmental'` (fall, drowning, lava, cactus, void). **No arbitrary retaliation is triggered.**
+  - If `entity.id !== bot.entity.id`, the damage was taken by another entity and ignored.
+  - Self-damage (`source.id === bot.entity.id`) is recorded and ignored.
+- **Live Target Validation**:
+  - The attacker must be present in `bot.entities[source.id]`.
+  - Must have `isValid !== false` and `health > 0`.
+  - Must be within `autoAttackRadius` (default 4.5m).
+- **Survival Precedence**: Retaliation is suppressed if the bot is in lava or drowning (`oxygen < 8`).
+- **Owner & Friend Immunity**: Retaliation is strictly forbidden against owners, friends, or protected entities.
+- **Opt-In Safety**: Auto-attack and combat retaliation remain disabled by default (`autoAttackHostiles = false`).
 
----
-
-## 7. LLM Providers, JSON Repair & Schema Contract
-
-### 7.1 Response JSON Schema (`src/prompt/schema.ts`)
-The model must emit a single JSON object matching this contract:
-```json
-{
-  "decision_summary": "Oak logs are visible nearby. Harvest the tree.",
-  "goal": "Gather wood to craft tools",
-  "actions": [
-    {
-      "action": "chop_tree",
-      "params": {}
-    }
-  ],
-  "memory": {
-    "note": "Forest biome detected"
-  },
-  "say": "Chopping wood!"
-}
-```
-
-### 7.2 JSON Extraction & Repair Pipeline (`src/llm/parser.ts`)
-- **Code Fence Stripping**: Detects and strips markdown wrappers (```` ```json ... ``` ````).
-- **Sub-String Extraction**: Scans for the first `{` and the last `}` to isolate JSON if conversational preamble or trailing text is present.
-- **Zod Validation**: Validates all fields against `LLMResponseSchema`. If validation fails, returns exact field errors to feed into bounded retries (up to 2 retries).
-
-### 7.3 Multi-Provider Support (`src/llm/`)
-- **LM Studio (`LMStudioProvider`)**: Local HTTP POST to `http://localhost:1234/v1/chat/completions` with JSON mode enabled. Zero cloud dependency.
-- **OpenAI Compatible (`OpenAIProvider`)**: Compatible with OpenAI, OpenRouter, Groq, or Ollama using environment keys.
-- **Anthropic (`AnthropicProvider`)**: Targets Claude 3.5 Sonnet Messages API with JSON enforcement.
-- **Mock LLM (`MockLLMProvider`)**: Deterministic and scripted mock provider for offline scenarios and CI integration tests.
+### 6.3 Environmental Reflexes (`src/agent/reflex.ts`)
+- **Drowning Reflex**: If `inWater` and `oxygen < 8`, cancels eating (`deactivateItem()`), preempts the arbiter, and swims upward (`jump = true`) until oxygen recovers.
+- **Lava Escape Reflex**: Cancels eating, actively scans 8 horizontal directions for confirmed solid, non-lava ground. If safe ground is found, paths and jumps toward it; if surrounded by lava column, jumps straight up rather than blindly walking forward.
+- **Auto-Eat Guard**: Uses an `isEating` state lock to prevent overlapping eat invocations. Emergency reflexes interrupt eating immediately.
 
 ---
 
-## 8. Safety Invariants & Boundary Guards
+## 7. Robust LLM Parsing, Balanced Extraction & Schema Contract
+
+Located in [`src/llm/parser.ts`](file:///b:/minecraft_ai_scratch/src/llm/parser.ts):
+
+### 7.1 Balanced JSON Extraction Pipeline
+Instead of fragile `indexOf('{')` and `lastIndexOf('}')`, the parser uses `extractAllBalancedJsonObjects`:
+1. Strips markdown code fences (```` ```json ... ``` ````) anywhere in the text using regex.
+2. Iterates characters while maintaining a string-literal state machine:
+   - Tracks double quotes, correctly handling escaped quotes (`\"`).
+   - Ignores braces `{` and `}` inside string literals.
+   - Accurately tracks brace nesting depth outside string literals.
+3. Extracts all top-level balanced `{ ... }` candidate substrings.
+4. Validates candidates against `LLMResponseSchema`, selecting the first schema-conformant candidate.
+
+### 7.2 Strict Schema Validation (`src/prompt/schema.ts`)
+- `ActionItemSchema` is `.strict()`, rejecting unexpected properties.
+- `action` is strictly validated against `z.enum(KNOWN_ACTION_NAMES)` (all 52 registered actions).
+- `radius` must be positive; `target` must be non-empty strings.
+- Rejects missing required fields, truncated JSON, empty responses, and malformed structures without crashing.
+- Bounded retries (maximum 2 retries) with structured feedback for recoverable schema errors.
+
+---
+
+## 8. Safety Invariants, Entity Snapshot Guards & Command Boundaries
 
 Located in [`src/safety/index.ts`](file:///b:/minecraft_ai_scratch/src/safety/index.ts):
 
-1. **Owner & Friend Immunity**:
-   Under no circumstances can the bot attack the configured owner or friend-listed players. This check is hard-coded in code:
-   ```ts
-   if (ent.isOwner || config.agent.owners.includes(ent.name) || config.agent.friends.includes(ent.name)) {
-     return { allowed: false, reason: "Target is protected." };
-   }
-   ```
-2. **Protected Entity Guard**:
-   Passives, pets (dogs, cats), horses, villagers, and iron golems are strictly protected from attacks.
-3. **Coordinate Bounding**:
-   Coordinates supplied to `goto` must fall within `scanRadius * 2` of current position. Prevents hallucinated coordinates.
-4. **Command Allowlist**:
-   `run_command` is disabled by default (`allowCommandExecution = false`). When enabled, only commands in `commandAllowlist` (e.g. `help`, `list`) can run.
-5. **Rate Limiting**:
-   Throttles actions to 60/min and chat messages to 1 per 1.5 seconds. Non-owner chat messages are treated as raw data, never as control instructions.
+### 8.1 Entity Snapshot & ID Binding (`resolveAndValidateTarget`)
+To prevent the bot from attacking or interacting with stale entities when the server reuses entity IDs:
+1. Validates that the entity exists in the observation snapshot.
+2. Re-queries live `bot.entities[rawEntity.id]`.
+3. Verifies `liveEntity.isValid !== false` and `liveEntity.health > 0`.
+4. Verifies entity type matches the observation snapshot to catch server ID reuse.
+5. Verifies distance is within reach (`<= 6.0m`).
+6. Enforces owner and friend immunity.
+
+### 8.2 Command Injection Hardening
+Commands executed via `run_command` are strictly sanitized:
+- Rejects shell injection metacharacters: `[\n\r;&|`$><\\()]`.
+- Must match the configured `commandAllowlist` (e.g. `help`, `list`, `time`, `weather`).
+- Non-owner chat messages are treated strictly as untrusted data.
+- Never evaluates or executes arbitrary model-generated code (`no eval()`).
 
 ---
 
@@ -348,66 +331,57 @@ Located in [`src/memory/index.ts`](file:///b:/minecraft_ai_scratch/src/memory/in
 - **Short-Term Rolling History**: Retains the last `N` steps (default 8) including step number, summary, action, and result status (`success`, `failed`, `interrupted`).
 - **Persistent Per-World Storage**: Saved to `data/memory-<worldId>.json`:
   - `namedLocations`: Map of named coordinates (`home`, `base`, `mine`, `last_death`).
-  - `facts`: Learned world facts (e.g. "spawner underground at 120, 30, -50").
+  - `facts`: Learned world facts.
   - `dangerZones`: Circular hazard areas to avoid.
   - `completedGoals`: History of accomplished milestones.
-- **Goal Hierarchy**:
-  Tracks high-level goal and plan steps with completion checkmarks.
 
 ---
 
 ## 10. Dashboard, In-Game Control & Replay Tool
 
 ### 10.1 Interactive Console CLI (`src/ui/dashboard.ts`)
-Direct terminal commands:
 - `status`: Displays current goal, step count, health, food, position, auto-attack state, and last action.
 - `attack-mode [on|off]`: Toggles real-time Auto-Attack defense mod.
 - `pause` / `resume`: Pauses or resumes the agent loop.
 - `step`: Approves a single step when `stepMode: true`.
 - `goal <text>`: Dynamically sets a new goal.
-- `quit` / `exit`: Flushes memory to disk, disconnects the bot, and terminates cleanly.
+- `quit` / `exit`: Flushes memory to disk, disconnects cleanly.
 
 ### 10.2 In-Game Owner Chat Commands
 Any player listed in `agent.owners` can say in chat:
-- `!goal <goal>`: Updates the bot's objective.
-- `!attack [on|off]`: Toggles auto-attack mode.
-- `!pause` / `!resume`: Pauses or resumes the bot.
-- `!step`: Approves next step.
+`!goal <goal>`, `!attack [on|off]`, `!pause`, `!resume`, `!step`.
 
 ### 10.3 Model Replay & Benchmarking Tool (`src/tools/replay.ts`)
-Re-evaluates recorded JSONL step records against another model or provider:
-```bash
-npx tsx src/tools/replay.ts logs/agent-steps-<timestamp>.jsonl [provider]
-```
-Calculates metrics: **Valid Decision Rate (%)**, **Average Latency (ms)**, and **Token Usage**.
+Re-evaluates recorded JSONL step records against another model or provider to calculate **Valid Decision Rate (%)**, **Average Latency (ms)**, and **Token Usage**.
 
 ---
 
 ## 11. Testing Suite & Verification Results
 
-The codebase includes 10 automated test suites executed via Vitest:
+The test suite runs with **Vitest**:
 
-| Test File | Focus Area |
-| :--- | :--- |
-| [`tests/config.test.ts`](file:///b:/minecraft_ai_scratch/tests/config.test.ts) | Default YAML config loading & Zod schema validation |
-| [`tests/json_parser.test.ts`](file:///b:/minecraft_ai_scratch/tests/json_parser.test.ts) | Markdown fence stripping, bracket extraction & Zod validation |
-| [`tests/math.test.ts`](file:///b:/minecraft_ai_scratch/tests/math.test.ts) | Yaw-to-facing calculation, 3D euclidean distance & bounding |
-| [`tests/safety.test.ts`](file:///b:/minecraft_ai_scratch/tests/safety.test.ts) | Owner immunity, protected entities, command allowlist |
-| [`tests/memory.test.ts`](file:///b:/minecraft_ai_scratch/tests/memory.test.ts) | Rolling history limit & persistent disk state |
-| [`tests/observation.test.ts`](file:///b:/minecraft_ai_scratch/tests/observation.test.ts) | 9x9 local map, vitals, inventory & entity perception |
-| [`tests/availability.test.ts`](file:///b:/minecraft_ai_scratch/tests/availability.test.ts) | Dynamic catalog filtering & runtime pre-check revalidation |
-| [`tests/reflex.test.ts`](file:///b:/minecraft_ai_scratch/tests/reflex.test.ts) | Auto-attack defense mod, weapon auto-equip & owner immunity |
-| [`tests/techniques.test.ts`](file:///b:/minecraft_ai_scratch/tests/techniques.test.ts) | Sneak-bridging, pillar jumping, scaffolding & staircase mining |
-| [`tests/scenario_loop.test.ts`](file:///b:/minecraft_ai_scratch/tests/scenario_loop.test.ts) | End-to-end decision loop execution with Mock LLM |
+| Test File | Focus Area | Tests | Status |
+| :--- | :--- | :--- | :--- |
+| [`tests/json_parser.test.ts`](file:///b:/minecraft_ai_scratch/tests/json_parser.test.ts) | Balanced brace parser, escaped quotes, KNOWN_ACTION_NAMES validation | 12 | Passed |
+| [`tests/techniques.test.ts`](file:///b:/minecraft_ai_scratch/tests/techniques.test.ts) | Preconditions, hazard checks, sneak-bridging, pillaring pitch & staircase | 13 | Passed |
+| [`tests/safety.test.ts`](file:///b:/minecraft_ai_scratch/tests/safety.test.ts) | Target validation, ID reuse, owner immunity, command sanitization | 11 | Passed |
+| [`tests/reflex.test.ts`](file:///b:/minecraft_ai_scratch/tests/reflex.test.ts) | Auto-attack opt-in, drowning/lava eating interruption, safe ground scan | 9 | Passed |
+| [`tests/arbiter.test.ts`](file:///b:/minecraft_ai_scratch/tests/arbiter.test.ts) | Action priority preemption, unique action IDs, stale cleanup prevention | 5 | Passed |
+| [`tests/scenario_loop.test.ts`](file:///b:/minecraft_ai_scratch/tests/scenario_loop.test.ts) | Multi-action plans, fresh observation revalidation, failure halting | 4 | Passed |
+| [`tests/observation.test.ts`](file:///b:/minecraft_ai_scratch/tests/observation.test.ts) | 9x9 map with cliff `'v'` & unknown `'?'`, vitals & entities | 3 | Passed |
+| [`tests/availability.test.ts`](file:///b:/minecraft_ai_scratch/tests/availability.test.ts) | Catalog filtering, pre-execution revalidation, timeout handling | 3 | Passed |
+| [`tests/math.test.ts`](file:///b:/minecraft_ai_scratch/tests/math.test.ts) | Yaw-to-facing calculation, 3D Euclidean distance & coordinate bounds | 3 | Passed |
+| [`tests/memory.test.ts`](file:///b:/minecraft_ai_scratch/tests/memory.test.ts) | Rolling step history limits & persistent per-world JSON storage | 2 | Passed |
+| [`tests/config.test.ts`](file:///b:/minecraft_ai_scratch/tests/config.test.ts) | Default YAML config loading & Zod schema validation | 2 | Passed |
 
-### Execution Command:
+### Test Suite Execution:
 ```bash
 npm test
 ```
-**Result**: **10 test files passed (34 / 34 tests passing).**
+**Output**: `11 passed (11 test files), 67 passed (67 tests)`.
 
-### TypeScript Build:
+### TypeScript Compilation:
 ```bash
 npm run build
 ```
-**Result**: Compiles to `/dist` with **0 TypeScript errors**.
+**Output**: `tsc` exited with code `0`. Compiles cleanly to `/dist` with zero TypeScript errors.
