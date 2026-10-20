@@ -101,16 +101,22 @@ export class MemoryManager {
   }
 
   public saveToDisk(): void {
+    const tempPath = `${this.filePath}.tmp`;
     try {
       const dataToSave = {
+        schemaVersion: 1,
         worldId: this.worldId,
         updatedAt: new Date().toISOString(),
         memory: this.memoryNotes,
         agentState: this.agentState,
       };
-      fs.writeFileSync(this.filePath, JSON.stringify(dataToSave, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, JSON.stringify(dataToSave, null, 2), 'utf-8');
+      fs.renameSync(tempPath, this.filePath);
     } catch (err: any) {
-      console.error('Failed to save memory to disk:', err.message);
+      console.error('Failed to save memory to disk atomically:', err.message);
+      try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch {}
     }
   }
 
@@ -119,14 +125,29 @@ export class MemoryManager {
       try {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (parsed.memory) {
-          this.memoryNotes = { ...this.memoryNotes, ...parsed.memory };
+        if (parsed.memory && typeof parsed.memory === 'object') {
+          this.memoryNotes = {
+            namedLocations: parsed.memory.namedLocations || {},
+            facts: Array.isArray(parsed.memory.facts) ? parsed.memory.facts : [],
+            dangerZones: Array.isArray(parsed.memory.dangerZones) ? parsed.memory.dangerZones : [],
+            completedGoals: Array.isArray(parsed.memory.completedGoals) ? parsed.memory.completedGoals : [],
+          };
         }
-        if (parsed.agentState) {
-          this.agentState = { ...this.agentState, ...parsed.agentState };
+        if (parsed.agentState && typeof parsed.agentState === 'object') {
+          this.agentState = {
+            currentGoal: parsed.agentState.currentGoal || this.agentState.currentGoal,
+            planSteps: Array.isArray(parsed.agentState.planSteps) ? parsed.agentState.planSteps : this.agentState.planSteps,
+            stepNumber: typeof parsed.agentState.stepNumber === 'number' ? parsed.agentState.stepNumber : 0,
+            stuckCounter: 0,
+            timeSinceLastProgressSeconds: 0,
+          };
         }
       } catch (err: any) {
-        console.error('Failed to read memory file, initializing default:', err.message);
+        console.error('Corrupted memory file detected. Quarantining:', err.message);
+        try {
+          const quarantinePath = `${this.filePath}.corrupted-${Date.now()}`;
+          fs.renameSync(this.filePath, quarantinePath);
+        } catch {}
       }
     }
   }

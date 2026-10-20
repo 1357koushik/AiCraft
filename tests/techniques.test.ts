@@ -51,7 +51,39 @@ describe('Autonomous Physical Techniques & Macros', () => {
     expect(scaffold.name).toBe('oak_planks');
   });
 
-  it('executes safe sneak-bridging with crouch and block placement', async () => {
+  it('executes safe sneak-bridging with crouch and verified block placement', async () => {
+    const mockDirt = { name: 'dirt', count: 10 };
+    let placedSuccess = false;
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+      inventory: {
+        items: () => [mockDirt],
+      },
+      blockAt: vi.fn().mockImplementation((pos: Vec3) => {
+        if (pos.x === 0 && pos.y === 63 && pos.z === 0) return { name: 'stone', position: pos, boundingBox: 'block' };
+        if (pos.x === 0 && pos.y === 63 && pos.z === 1 && placedSuccess) {
+          return { name: 'dirt', position: pos, boundingBox: 'block' };
+        }
+        return { name: 'air', position: pos };
+      }),
+      equip: vi.fn().mockResolvedValue(undefined),
+      setControlState: vi.fn(),
+      clearControlStates: vi.fn(),
+      lookAt: vi.fn().mockResolvedValue(undefined),
+      placeBlock: vi.fn().mockImplementation(() => {
+        placedSuccess = true;
+        return Promise.resolve();
+      }),
+    };
+
+    const res = await techniqueBridge(mockBot, 'south', 1);
+
+    expect(mockBot.setControlState).toHaveBeenCalledWith('sneak', true);
+    expect(mockBot.placeBlock).toHaveBeenCalled();
+    expect(res.status).toBe('success');
+  });
+
+  it('aborts sneak-bridging and does not walk into the void if placement fails', async () => {
     const mockDirt = { name: 'dirt', count: 10 };
     const mockBot: any = {
       entity: { position: new Vec3(0, 64, 0), yaw: 0 },
@@ -59,9 +91,8 @@ describe('Autonomous Physical Techniques & Macros', () => {
         items: () => [mockDirt],
       },
       blockAt: vi.fn().mockImplementation((pos: Vec3) => {
-        // Ground at 0, 63, 0 exists; open air ahead at 0, 63, 1
-        if (pos.x === 0 && pos.y === 63 && pos.z === 0) return { name: 'stone', position: pos };
-        return { name: 'air', position: pos };
+        if (pos.x === 0 && pos.y === 63 && pos.z === 0) return { name: 'stone', position: pos, boundingBox: 'block' };
+        return { name: 'air', position: pos }; // never placed
       }),
       equip: vi.fn().mockResolvedValue(undefined),
       setControlState: vi.fn(),
@@ -72,9 +103,45 @@ describe('Autonomous Physical Techniques & Macros', () => {
 
     const res = await techniqueBridge(mockBot, 'south', 1);
 
-    expect(mockBot.setControlState).toHaveBeenCalledWith('sneak', true);
-    expect(mockBot.placeBlock).toHaveBeenCalled();
-    expect(res.status).toBe('success');
+    expect(res.status).toBe('failed');
+    expect(res.reason).toContain('Bridging halted');
+    expect(mockBot.clearControlStates).toHaveBeenCalled();
+  });
+
+  it('verifies pillar up aims downwards with positive pitch', async () => {
+    const mockDirt = { name: 'dirt', count: 5 };
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+      inventory: { items: () => [mockDirt] },
+      blockAt: vi.fn().mockReturnValue({ name: 'stone', boundingBox: 'block' }),
+      equip: vi.fn().mockResolvedValue(undefined),
+      look: vi.fn().mockResolvedValue(undefined),
+      setControlState: vi.fn(),
+    };
+
+    await techniquePillarUp(mockBot, 1);
+
+    expect(mockBot.look).toHaveBeenCalledWith(0, Math.PI / 2, true);
+  });
+
+  it('halts staircase mining if lava hazard is detected ahead', async () => {
+    const mockPickaxe = { name: 'iron_pickaxe' };
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+      inventory: { items: () => [mockPickaxe] },
+      heldItem: mockPickaxe,
+      blockAt: vi.fn().mockImplementation((pos: Vec3) => {
+        if (pos.z === 1 && pos.y === 64) return { name: 'lava' };
+        return { name: 'stone' };
+      }),
+      equip: vi.fn().mockResolvedValue(undefined),
+      dig: vi.fn().mockResolvedValue(undefined),
+      setControlState: vi.fn(),
+    };
+
+    const res = await techniqueMineStaircase(mockBot, 2);
+    expect(res.status).toBe('failed');
+    expect(res.reason).toContain('lava hazard');
   });
 
   it('executes staircase mining without digging straight down', async () => {

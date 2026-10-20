@@ -17,6 +17,20 @@ describe('LLM JSON Parser and Cleaner', () => {
     expect(parsed.data?.actions[0].action).toBe('mine_resource');
   });
 
+  it('handles braces inside string literals and escaped quotes correctly', () => {
+    const raw = `
+    Here is an answer with {explanatory braces}:
+    {
+      "decision_summary": "Looking at {special} tree \\"oak\\" with leaves",
+      "goal": "Collect wood",
+      "actions": [{"action": "wait", "params": {}}]
+    }
+    End of message {extra}`;
+    const parsed = parseAndValidateLLMResponse(raw);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.decision_summary).toContain('{special}');
+  });
+
   it('rejects JSON missing required fields', () => {
     const invalid = '{"decision_summary": "missing goal and actions"}';
     const parsed = parseAndValidateLLMResponse(invalid);

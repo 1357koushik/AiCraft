@@ -166,20 +166,30 @@ export function extractInventory(bot: Bot, handedness: 'right' | 'left' = 'right
   // Craftable now
   const craftableNow: string[] = [];
   try {
-    // Find crafting table block nearby within reach (3 blocks)
+    // Find crafting table block nearby within reach (4 blocks)
     const craftingTableBlock = bot.findBlock({
       matching: (b) => b.name === 'crafting_table',
-      maxDistance: 4,
+      maxDistance: 4.5,
     });
 
-    // Check craftable recipes for all known items
-    const allRecipes = (bot as any).recipesAll(null, craftingTableBlock, true);
-    const seen = new Set<string>();
-    for (const r of allRecipes) {
-      const resItem = bot.registry.items[r.result.id];
-      if (resItem && !seen.has(resItem.name)) {
-        seen.add(resItem.name);
-        craftableNow.push(resItem.name);
+    // Check craftable candidates against inventory items using recipesFor
+    const candidateItems = [
+      'oak_planks', 'spruce_planks', 'birch_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks',
+      'stick', 'crafting_table', 'furnace', 'chest', 'barrel', 'torch',
+      'wooden_pickaxe', 'wooden_axe', 'wooden_shovel', 'wooden_sword', 'wooden_hoe',
+      'stone_pickaxe', 'stone_axe', 'stone_shovel', 'stone_sword', 'stone_hoe',
+      'iron_pickaxe', 'iron_axe', 'iron_shovel', 'iron_sword', 'iron_hoe',
+      'shield', 'bucket', 'shears', 'bread', 'bowl', 'mushroom_stew',
+      'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots',
+    ];
+
+    for (const candName of candidateItems) {
+      const itemDef = bot.registry.itemsByName[candName];
+      if (itemDef) {
+        const recipes = bot.recipesFor(itemDef.id, null, 1, craftingTableBlock);
+        if (recipes && recipes.length > 0) {
+          craftableNow.push(candName);
+        }
       }
     }
   } catch {

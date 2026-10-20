@@ -8,10 +8,11 @@ export interface ParseResult {
   error?: string;
 }
 
-export function cleanJsonString(raw: string): string {
+/**
+ * Strips markdown code fences from the input string.
+ */
+export function stripCodeFences(raw: string): string {
   let text = raw.trim();
-
-  // Strip markdown code fences like ```json ... ``` or ``` ... ```
   if (text.startsWith('```')) {
     text = text.replace(/^```(?:json)?\s*/i, '');
     const lastFence = text.lastIndexOf('```');
@@ -19,17 +20,70 @@ export function cleanJsonString(raw: string): string {
       text = text.substring(0, lastFence);
     }
   }
+  return text.trim();
+}
 
-  text = text.trim();
+/**
+ * Finds a valid balanced JSON object {...} in a string,
+ * correctly ignoring braces inside string literals and escaped quotes.
+ * If multiple balanced blocks exist (e.g. conversational braces), it iterates
+ * until finding one that parses as a valid JSON object.
+ */
+export function extractFirstBalancedJsonObject(text: string): string | null {
+  let startIndex = -1;
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
 
-  // If text starts before the first '{', find the first '{' and the last '}'
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    text = text.substring(firstBrace, lastBrace + 1);
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        if (depth === 0) {
+          startIndex = i;
+        }
+        depth++;
+      } else if (char === '}') {
+        if (depth > 0) {
+          depth--;
+          if (depth === 0 && startIndex !== -1) {
+            const candidate = text.substring(startIndex, i + 1);
+            try {
+              JSON.parse(candidate);
+              return candidate;
+            } catch {
+              // Not valid JSON, continue scanning forward from the current position
+              startIndex = -1;
+            }
+          }
+        }
+      }
+    }
   }
 
-  return text;
+  return null;
+}
+
+export function cleanJsonString(raw: string): string {
+  const stripped = stripCodeFences(raw);
+  const balanced = extractFirstBalancedJsonObject(stripped);
+  return balanced || stripped;
 }
 
 export function parseAndValidateLLMResponse(rawText: string): ParseResult {

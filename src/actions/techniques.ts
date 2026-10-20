@@ -93,33 +93,35 @@ export async function techniquePillarUp(bot: Bot, height: number = 3): Promise<A
       return { status: 'failed', reason: 'No solid block beneath to jump from.' };
     }
 
-    // Look straight down
-    await bot.look(bot.entity.yaw, -Math.PI / 2, true);
+    try {
+      // Look straight down at the ground block (positive PI/2 is DOWN in Minecraft)
+      await bot.look(bot.entity.yaw, Math.PI / 2, true);
 
-    // Jump
-    bot.setControlState('jump', true);
+      // Jump
+      bot.setControlState('jump', true);
 
-    // Wait until bot reaches jump apex (height > 1.15)
-    let jumped = false;
-    for (let t = 0; t < 15; t++) {
-      await new Promise((res) => setTimeout(res, 30));
-      if (bot.entity.position.y - startPos.y > 1.12) {
-        jumped = true;
-        break;
-      }
-    }
-
-    if (jumped) {
-      try {
-        const refBlock = bot.blockAt(startPos.floored());
-        if (refBlock && refBlock.name !== 'air') {
-          await bot.placeBlock(refBlock, new Vec3(0, 1, 0));
-          placed++;
+      // Wait until bot reaches jump apex (height > 1.12)
+      let jumped = false;
+      for (let t = 0; t < 15; t++) {
+        await new Promise((res) => setTimeout(res, 30));
+        if (bot.entity.position.y - startPos.y > 1.12) {
+          jumped = true;
+          break;
         }
-      } catch {}
-    }
+      }
 
-    bot.setControlState('jump', false);
+      if (jumped) {
+        try {
+          const refBlock = bot.blockAt(startPos.floored());
+          if (refBlock && refBlock.name !== 'air') {
+            await bot.placeBlock(refBlock, new Vec3(0, 1, 0));
+            placed++;
+          }
+        } catch {}
+      }
+    } finally {
+      bot.setControlState('jump', false);
+    }
     await new Promise((res) => setTimeout(res, 180));
   }
 
@@ -129,6 +131,7 @@ export async function techniquePillarUp(bot: Bot, height: number = 3): Promise<A
 /**
  * Technique: Safe Sneak-Bridging
  * Crouches (sneak) to prevent falling off cliffs and extends a bridge across open air.
+ * Strictly verifies block placement before moving forward.
  */
 export async function techniqueBridge(
   bot: Bot,
@@ -184,22 +187,29 @@ export async function techniqueBridge(
 
       // If gap ahead is open air, place block against current ground face
       if (currentGround && (!targetGroundBlock || targetGroundBlock.name === 'air')) {
-        // Look towards the ledge edge
         await bot.lookAt(currentGround.position.offset(0.5 + dirVec.x * 0.4, 0.5, 0.5 + dirVec.z * 0.4), true);
 
         try {
           await bot.placeBlock(currentGround, faceVec);
-          placed++;
         } catch {
-          // If placement fails, try top face or retry
           try {
             await bot.placeBlock(currentGround, new Vec3(0, 1, 0));
-            placed++;
           } catch {}
         }
+
+        // Post-placement verification: Confirm block actually appeared before stepping!
+        const verifyBlock = bot.blockAt(targetGroundPos);
+        if (!verifyBlock || verifyBlock.name === 'air') {
+          // Block placement failed or was cancelled by server; DO NOT walk into the void!
+          return {
+            status: 'failed',
+            reason: `Bridging halted: block placement could not be verified at ${targetGroundPos.x}, ${targetGroundPos.y}, ${targetGroundPos.z}.`,
+          };
+        }
+        placed++;
       }
 
-      // Step forward carefully onto the new block while remaining crouched
+      // Step forward onto the verified new block while remaining crouched
       bot.setControlState('forward', true);
       await new Promise((res) => setTimeout(res, 400));
       bot.setControlState('forward', false);
@@ -363,6 +373,22 @@ export async function techniqueMineStaircase(bot: Bot, steps: number = 6): Promi
   for (let s = 1; s <= count; s++) {
     const currentFeet = bot.entity.position.floored();
     const stepAhead = currentFeet.offset(dirVec.x, 0, dirVec.z);
+
+    // Hazard pre-inspection: Check for lava or unstable falling blocks
+    const overhead = bot.blockAt(stepAhead.offset(0, 2, 0));
+    if (overhead && (overhead.name === 'sand' || overhead.name === 'gravel')) {
+      return { status: 'failed', reason: 'Staircase mining halted: unstable falling gravel/sand detected overhead.' };
+    }
+
+    const surrounding = [
+      bot.blockAt(stepAhead.offset(0, 1, 0)),
+      bot.blockAt(stepAhead),
+      bot.blockAt(stepAhead.offset(0, -1, 0)),
+      bot.blockAt(stepAhead.offset(dirVec.x, 0, dirVec.z)),
+    ];
+    if (surrounding.some((b) => b?.name === 'lava' || b?.name === 'flowing_lava')) {
+      return { status: 'failed', reason: 'Staircase mining halted: lava hazard detected ahead.' };
+    }
 
     // Auto-equip best pickaxe or shovel
     const pickaxe = bot.inventory.items().find((i) => i.name.includes('pickaxe'));

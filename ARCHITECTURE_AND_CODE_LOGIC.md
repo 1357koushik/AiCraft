@@ -137,7 +137,7 @@ The perception system converts raw Mineflayer internals and loaded chunk packets
 ### 3.2 Inventory & Recipe Queries (`src/perception/inventory.ts`)
 - **Hands**: Accurately tracks main hand and off hand based on configured handedness (`right` or `left`).
 - **Tool Summary**: Scans inventory to identify the highest tier (`wooden` -> `stone` -> `iron` -> `diamond` -> `netherite`) of pickaxe, axe, shovel, sword, and hoe. Monitors durability and alerts when an item has `< 15` uses remaining.
-- **Craftable Now**: Interrogates `bot.recipesAll()` using nearby crafting tables within reach (4.5m) to present the model with a concrete list of recipes that can be crafted right now.
+- **Craftable Now**: Interrogates `bot.recipesFor(candidateItem.id, null, 1, craftingTable)` across 35+ core items (tools, weapons, armor, containers, torches, bread) using nearby crafting tables within reach (4.5m) to present the model with a concrete list of recipes that can be crafted with currently held ingredients.
 
 ### 3.3 Spatial Mapping & Hazard Detection (`src/perception/blocks.ts`)
 - **Walkability Engine**: Evaluates the 4 cardinal directions (North, South, East, West) from the bot's feet. Categorizes each direction as:
@@ -174,13 +174,13 @@ The perception system converts raw Mineflayer internals and loaded chunk packets
    Because the LLM takes multiple seconds to respond, the Minecraft world can change mid-inference. Immediately before invoking the action executor, the engine re-checks if the action and its arguments are still valid (e.g. target mob didn't despawn, block didn't get destroyed).
 
 ### 4.2 Action Registry Overview
-The system registers 28 distinct actions across 6 categories:
-- **Movement**: `goto`, `follow`, `flee`, `move`, `jump`, `swim_up`, `sprint`, `sneak`, `look_at`, `explore`, `stop`, `pillar_up`, `bridge`.
-- **Mining & Building**: `dig_block`, `mine_resource`, `chop_tree`, `place_block`, `collect_items`, `use_bucket`, `till`, `plant`, `harvest`, `mine_staircase`, `build_shelter`, `vacuum_drops`.
-- **Inventory & Crafting**: `equip`, `select_hotbar`, `swap_hands`, `drop`, `eat`, `craft`, `craft_pipeline`, `open_container`, `deposit`, `withdraw`, `close_container`.
-- **Combat**: `attack`, `attack_nearest`, `shoot`, `block_with_shield`.
-- **World Interaction**: `interact_block`, `interact_entity`, `sleep`, `wake`, `mount`, `dismount`.
-- **Meta**: `chat`, `wait`, `remember`, `set_goal`, `respawn`, `run_command` (strictly restricted by allowlist).
+The system registers **52 distinct verified actions** across 6 categories (dynamically verified at runtime and in test suite via `actionMap.size`):
+- **Movement (13)**: `goto`, `follow`, `flee`, `move`, `jump`, `swim_up`, `sprint`, `sneak`, `look_at`, `explore`, `stop`, `pillar_up`, `bridge`.
+- **Mining & Building (12)**: `dig_block`, `mine_resource`, `chop_tree`, `place_block`, `collect_items`, `use_bucket`, `till`, `plant`, `harvest`, `mine_staircase`, `build_shelter`, `vacuum_drops`.
+- **Inventory & Crafting (11)**: `equip`, `select_hotbar`, `swap_hands`, `drop`, `eat`, `craft`, `craft_pipeline`, `open_container`, `deposit`, `withdraw`, `close_container`.
+- **Combat (4)**: `attack`, `attack_nearest`, `shoot`, `block_with_shield`.
+- **World Interaction (6)**: `interact_block`, `interact_entity`, `sleep`, `wake`, `mount`, `dismount`.
+- **Meta (6)**: `chat`, `wait`, `remember`, `set_goal`, `respawn`, `run_command` (strictly restricted by allowlist).
 
 ---
 
@@ -205,11 +205,11 @@ export async function techniquePillarUp(bot: Bot, height: number): Promise<Actio
 ```
 - **Code Logic**:
   1. Finds a scaffolding block in inventory and equips it in the main hand.
-  2. Aims the bot's camera straight down (`pitch = -Math.PI / 2`).
+  2. Aims the bot's camera straight down (`pitch = Math.PI / 2`, where positive pitch points down in Minecraft protocol).
   3. Sets `jump = true`.
   4. Polls the bot's elevation until `bot.entity.position.y - startY > 1.12` (the apex of the jump).
   5. Places the block against the block directly beneath feet in mid-air.
-  6. Sets `jump = false` and waits for physics settlement.
+  6. In a `finally` block, sets `jump = false` and waits for physics settlement.
   7. Repeats for the requested height.
 
 ### 5.3 Safe Sneak-Bridging (`techniqueBridge`)
@@ -221,8 +221,9 @@ export async function techniqueBridge(bot: Bot, direction: string, distance: num
   2. Resolves cardinal direction vectors.
   3. Detects the ledge block under the bot's feet and the open air ahead.
   4. Looks towards the edge face and places a block against the ledge.
-  5. Steps forward onto the new block while remaining crouched.
-  6. Repeats across the gap, releasing `sneak` only upon completion.
+  5. **Post-Placement Verification**: Re-checks `bot.blockAt(targetGroundPos)` to ensure the placed block actually manifested on the server before moving. If placement failed, aborts safely rather than stepping forward into the void.
+  6. Steps forward onto the verified new block while remaining crouched.
+  7. In a `finally` block, safely clears all control states and releases `sneak = false`.
 
 ### 5.4 Full Tree Harvester Macro (`techniqueChopTreeFull`)
 ```ts
@@ -260,29 +261,27 @@ export async function techniqueCraftPipeline(bot: Bot, targetItemName: string): 
 
 ---
 
-## 6. Emergency Reflex Layer & Auto-Attack Mod
+## 6. Emergency Reflex Layer, Auto-Attack Mod & Action Arbiter
 
-Located in [`src/agent/reflex.ts`](file:///b:/minecraft_ai_scratch/src/agent/reflex.ts), this system runs on every turn and reacts instantly:
+### 6.1 Action Arbiter (`src/agent/arbiter.ts`)
+To prevent asynchronous reflexes (such as auto-eating or retaliating) from conflicting with ongoing pathfinding or placement macros:
+- **Central Concurrency Coordinator**: The `ActionArbiter` maintains ownership of bot controls and tracks the active action lifecycle with `AbortController` cancellation tokens.
+- **Priority Preemption**: When an emergency reflex triggers (lava, drowning, low health, or retaliatory defense), the arbiter calls `preempt()`, which stops pathfinding, clears all controls (`bot.clearControlStates()`), deactivates held items, and safely grants control to the emergency reflex.
 
-1. **Auto-Attack Combat Mode (`autoAttackHostiles`)**:
-   - Engagement Reach: Default `3.8` blocks.
-   - Attack Speed Timing: Throttled to `650ms` (~1.5 hits/sec, matching 1.9+ weapon recovery cooldowns).
-   - Auto-Equips best sword or axe before swinging.
-   - Auto Shield Block (`autoShieldBlock`): If facing a skeleton or exploding creeper, raises off-hand shield for 400ms to absorb damage.
+### 6.2 Reflexes & Combat Defense (`src/agent/reflex.ts`)
+1. **Auto-Attack Defense Mod (`autoAttackHostiles`)**:
+   - **Opt-In Safety**: Defaults to `false` in config; activated via `config.yaml`, CLI (`attack-mode on`), or owner chat (`!attack on`).
+   - **Engagement Reach**: Default `3.8` blocks.
+   - **Attack Speed Timing**: Throttled to `650ms` (~1.5 hits/sec, matching 1.9+ weapon recovery cooldowns).
+   - **Auto-Equips** best sword or axe before swinging.
+   - **Auto Shield Block (`autoShieldBlock`)**: If facing a skeleton or exploding creeper, raises off-hand shield for 400ms to absorb damage.
 2. **Real-Time Retaliation Listener**:
-   Listens directly to the `entityHurt` event:
-   ```ts
-   this.bot.on('entityHurt', (entity) => {
-     if (entity === this.bot.entity && this.reflex.isAutoAttackEnabled()) {
-       // Instantly targets and counter-attacks the aggressor
-     }
-   });
-   ```
+   Listens to the `entityHurt` event: preempts lower-priority actions and immediately targets the hostile mob that attacked the bot. Strictly ignores attacks from owners, friends, or protected entities.
 3. **Environmental Reflexes**:
    - **Low Oxygen Reflex**: If `oxygen < 8` and `underwater = true`, overrides LLM and swims up (`jump = true`) until reaching surface.
-   - **Lava Escape Reflex**: If touching lava or on fire, triggers sprint-jump forward to escape fluid.
+   - **Lava Escape Reflex**: Identifies safe non-lava ground rather than blindly sprinting into deeper hazards.
    - **Critical Health Flee**: If `health <= 6.0` and a hostile mob is within 8m, triggers sprint-flee.
-   - **Auto-Eat**: If `food <= 14.0` and food exists, consumes food immediately.
+   - **Auto-Eat**: Configured to `food <= 8.0` by default (avoiding food waste while safely maintaining sprint capability).
 
 ---
 
@@ -405,7 +404,7 @@ The codebase includes 10 automated test suites executed via Vitest:
 ```bash
 npm test
 ```
-**Result**: **10 test files passed (28 / 28 tests passing).**
+**Result**: **10 test files passed (34 / 34 tests passing).**
 
 ### TypeScript Build:
 ```bash

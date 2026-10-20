@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AvailabilityEngine } from '../src/actions/availability.js';
 import { loadConfig } from '../src/config/index.js';
+import { allActions, actionMap } from '../src/actions/registry.js';
 
 describe('Availability Engine & Action Revalidation', () => {
   const config = loadConfig();
@@ -40,6 +41,30 @@ describe('Availability Engine & Action Revalidation', () => {
     expect(actionNames).toContain('wait');
     // Blocked action should not be in catalog
     expect(actionNames).not.toContain('run_command');
+  });
+
+  it('verifies that every action in the registry has complete metadata and valid callbacks', () => {
+    expect(allActions.length).toBe(actionMap.size);
+    expect(allActions.length).toBeGreaterThanOrEqual(50);
+
+    const validCategories = [
+      'movement',
+      'mining_building',
+      'inventory_crafting',
+      'combat',
+      'world_interaction',
+      'meta',
+    ];
+
+    for (const act of allActions) {
+      expect(typeof act.name).toBe('string');
+      expect(act.name.length).toBeGreaterThan(0);
+      expect(validCategories).toContain(act.category);
+      expect(typeof act.description).toBe('string');
+      expect(typeof act.parameterSchema).toBe('object');
+      expect(typeof act.isAvailable).toBe('function');
+      expect(typeof act.execute).toBe('function');
+    }
   });
 
   it('revalidates actions at runtime before execution', () => {

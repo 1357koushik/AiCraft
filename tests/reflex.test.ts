@@ -7,8 +7,9 @@ describe('Auto Attack Mod & Reflex Layer', () => {
   const config = loadConfig();
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
-  it('triggers auto-attack against nearby hostile mobs', async () => {
+  it('triggers auto-attack against nearby hostile mobs when enabled', async () => {
     const reflex = new ReflexLayer(config, logger);
+    reflex.setAutoAttackEnabled(true);
 
     const mockSword = { type: 267, name: 'iron_sword', count: 1 };
     const mockBot: any = {
@@ -112,5 +113,31 @@ describe('Auto Attack Mod & Reflex Layer', () => {
     const res = await reflex.evaluateReflexes(mockBot, mockObs);
     expect(res.triggered).toBe(false);
     expect(mockBot.attack).not.toHaveBeenCalled();
+  });
+
+  it('retaliates against an identified hostile attacker, but ignores owner attacks', async () => {
+    const reflex = new ReflexLayer(config, logger);
+    reflex.setAutoAttackEnabled(true);
+
+    const mockBot: any = {
+      entity: { position: new Vec3(0, 64, 0), height: 1.6 },
+      inventory: { items: () => [] },
+      attack: vi.fn(),
+      lookAt: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const hostileAttacker = { name: 'skeleton', type: 'hostile', position: new Vec3(2, 64, 0), height: 1.8 };
+    const res1 = await reflex.autoDefendAttacker(mockBot, hostileAttacker);
+    expect(res1).toBe(true);
+    expect(mockBot.attack).toHaveBeenCalledWith(hostileAttacker);
+
+    // If attacker is owner, retaliation must be strictly refused
+    const ownerAttacker = { username: 'OwnerPlayer', name: 'OwnerPlayer', type: 'player', position: new Vec3(1, 64, 0) };
+    const res2 = await reflex.autoDefendAttacker(mockBot, ownerAttacker);
+    expect(res2).toBe(false);
+
+    // If no attacker (environmental damage), returns false
+    const res3 = await reflex.autoDefendAttacker(mockBot, null);
+    expect(res3).toBe(false);
   });
 });

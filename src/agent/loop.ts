@@ -5,6 +5,7 @@ import { MemoryManager } from '../memory/index.js';
 import { SafetyManager } from '../safety/index.js';
 import { ReflexLayer } from './reflex.js';
 import { StuckDetector } from './stuck.js';
+import { ActionArbiter } from './arbiter.js';
 import { buildObservation } from '../perception/index.js';
 import { AvailabilityEngine } from '../actions/availability.js';
 import { ILLMProvider, Observation, RecentEventsState, ActionResult } from '../types/index.js';
@@ -19,6 +20,7 @@ export class AgentController {
   private safety: SafetyManager;
   private reflex: ReflexLayer;
   private stuckDetector: StuckDetector;
+  private arbiter: ActionArbiter;
   private llmProvider: ILLMProvider;
 
   private isRunning = false;
@@ -51,6 +53,7 @@ export class AgentController {
     this.safety = safety;
     this.reflex = new ReflexLayer(config, logger);
     this.stuckDetector = new StuckDetector();
+    this.arbiter = new ActionArbiter(logger);
     this.llmProvider = llmProvider;
 
     this.setupEventListeners();
@@ -132,6 +135,7 @@ export class AgentController {
     // 2. Reflex layer: fast check without LLM latency
     const reflexResult = await this.reflex.evaluateReflexes(this.bot, dummyObs);
     if (reflexResult.triggered) {
+      this.arbiter.preempt(this.bot, reflexResult.name || 'Emergency reflex');
       this.recentEvents.reflexFired = reflexResult.name;
       this.logger.info(`Handled reflex: ${reflexResult.name}`);
       return;
@@ -262,15 +266,21 @@ export class AgentController {
       this.logger.info(`Executing action: ${item.action} params: ${JSON.stringify(item.params)}`);
       executedActions.push(item);
 
-      const result = await AvailabilityEngine.executeWithTimeout(
-        item.action,
-        item.params,
-        this.bot,
-        observation,
-        this.config,
-        this.logger.logger,
-        25000
-      );
+      this.arbiter.startAction(item.action);
+      let result: ActionResult;
+      try {
+        result = await AvailabilityEngine.executeWithTimeout(
+          item.action,
+          item.params,
+          this.bot,
+          observation,
+          this.config,
+          this.logger.logger,
+          25000
+        );
+      } finally {
+        this.arbiter.finishAction(item.action);
+      }
 
       actionResults.push(result);
       this.logger.info(`Action ${item.action} completed: ${result.status} (${result.reason})`);
@@ -396,12 +406,14 @@ export class AgentController {
 
         // Immediate counter-attack / defense reflex against nearby hostile
         if (this.reflex.isAutoAttackEnabled()) {
+          const attackRadius = this.config.safety.reflexes.autoAttackRadius || 3.8;
           const attacker = Object.values(this.bot.entities).find((e) => {
             if (!e || e === this.bot.entity) return false;
             const dist = distance3D(this.bot.entity.position, e.position);
-            return dist <= 4.0 && (e.type === 'mob' || e.type === 'hostile');
+            return dist <= attackRadius && (e.type === 'mob' || e.type === 'hostile');
           });
           if (attacker) {
+            this.arbiter.preempt(this.bot, `Retaliating against ${attacker.name || 'hostile'}`);
             this.reflex.autoDefendAttacker(this.bot, attacker).catch(() => {});
           }
         }

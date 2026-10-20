@@ -124,7 +124,7 @@ describe('Agent Controller & Scenario Execution', () => {
     const mockBot: any = {
       username: 'AIAgentBot',
       health: 18,
-      food: 8, // below threshold of 14!
+      food: 6, // below threshold of 8.0!
       foodSaturation: 0,
       oxygenLevel: 20,
       isAlive: true,

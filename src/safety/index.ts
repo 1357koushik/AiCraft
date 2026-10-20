@@ -48,12 +48,21 @@ export class SafetyManager {
           reason: 'Command execution is disabled by default.',
         };
       }
-      const cmd = String(params?.command || '').trim().replace(/^\//, '');
-      const baseCmd = cmd.split(' ')[0];
-      if (!this.config.safety.commandAllowlist.includes(baseCmd)) {
+      const rawCmd = String(params?.command || '').trim();
+      // Block command chaining or injection characters
+      if (/[\n\r;&|]/.test(rawCmd)) {
         return {
           allowed: false,
-          reason: `Command '${baseCmd}' is not permitted by command allowlist.`,
+          reason: 'Command chaining or control characters are forbidden.',
+        };
+      }
+      const cleanedCmd = rawCmd.replace(/^\//, '').trim();
+      const tokens = cleanedCmd.split(/\s+/);
+      const baseCmd = tokens[0]?.toLowerCase();
+      if (!baseCmd || !this.config.safety.commandAllowlist.map((c) => c.toLowerCase()).includes(baseCmd)) {
+        return {
+          allowed: false,
+          reason: `Command '${baseCmd || 'empty'}' is not permitted by command allowlist.`,
         };
       }
     }

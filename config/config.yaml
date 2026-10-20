@@ -55,10 +55,10 @@ safety:
     emergencyFlee: true
     fleeHealthThreshold: 6.0
     autoEat: true
-    eatFoodThreshold: 14.0
+    eatFoodThreshold: 8.0
     escapeLavaWater: true
     avoidMiningStraightDown: true
-    autoAttackHostiles: true
+    autoAttackHostiles: false
     autoAttackRadius: 3.8
     autoShieldBlock: true
   dangerZones: []
