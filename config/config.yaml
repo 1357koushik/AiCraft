@@ -58,6 +58,9 @@ safety:
     eatFoodThreshold: 14.0
     escapeLavaWater: true
     avoidMiningStraightDown: true
+    autoAttackHostiles: true
+    autoAttackRadius: 3.8
+    autoShieldBlock: true
   dangerZones: []
 
 logging:

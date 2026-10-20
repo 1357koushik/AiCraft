@@ -64,6 +64,17 @@ export class ConsoleDashboard {
           }
           break;
 
+        case 'attack-mode':
+        case 'attack':
+        case 'defend': {
+          let enabled: boolean | undefined;
+          if (argStr.toLowerCase() === 'on') enabled = true;
+          else if (argStr.toLowerCase() === 'off') enabled = false;
+          const current = this.agentController.toggleAutoAttack(enabled);
+          console.log(`[CLI] Auto-Attack Mod is now ${current ? 'ENABLED' : 'DISABLED'}.`);
+          break;
+        }
+
         case 'status':
           this.printStatus();
           break;
@@ -97,6 +108,7 @@ export class ConsoleDashboard {
     console.log(`Goal:        ${this.memory.state.currentGoal}`);
     console.log(`Step:        ${this.memory.state.stepNumber}`);
     console.log(`Health:      ${health}/20 | Food: ${food}/20`);
+    console.log(`Auto-Attack: ${this.agentController.isAutoAttackEnabled() ? 'ENABLED' : 'DISABLED'}`);
     if (pos) {
       console.log(`Position:    X: ${pos.x.toFixed(1)} Y: ${pos.y.toFixed(1)} Z: ${pos.z.toFixed(1)}`);
     }
@@ -113,6 +125,7 @@ export class ConsoleDashboard {
     console.log('pause         - Pause the AI decision loop');
     console.log('resume        - Resume the AI decision loop');
     console.log('step          - Approve next step (in step mode)');
+    console.log('attack-mode   - Toggle or set auto-attack mode (attack-mode [on|off])');
     console.log('goal <text>   - Set a new high-level goal');
     console.log('status        - Print current status summary');
     console.log('help          - Show this command reference');

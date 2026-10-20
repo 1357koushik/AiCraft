@@ -128,7 +128,8 @@ npm run dev
 
 ### Interactive Console CLI Commands
 While running, type directly into the terminal:
-- `status`: prints health, food, position, goal, and last action.
+- `status`: prints health, food, position, goal, auto-attack status, and last action.
+- `attack-mode [on|off]`: toggles or sets real-time auto-attack defense mode.
 - `pause`: pauses the AI decision loop.
 - `resume`: resumes the decision loop.
 - `step`: approves a single decision turn (when `stepMode: true`).
@@ -137,6 +138,7 @@ While running, type directly into the terminal:
 
 ### In-Game Owner Commands
 From Minecraft chat (must match a username listed in `agent.owners` in `config.yaml`):
+- `!attack [on|off]`: toggles or sets auto-attack defense mode.
 - `!goal <goal>`: changes agent goal.
 - `!pause`: pauses bot.
 - `!resume`: resumes bot.

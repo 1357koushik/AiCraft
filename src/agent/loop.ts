@@ -9,6 +9,7 @@ import { buildObservation } from '../perception/index.js';
 import { AvailabilityEngine } from '../actions/availability.js';
 import { ILLMProvider, Observation, RecentEventsState, ActionResult } from '../types/index.js';
 import { buildSystemPrompt, buildUserPrompt } from '../prompt/index.js';
+import { distance3D } from '../utils/math.js';
 
 export class AgentController {
   private bot: Bot;
@@ -68,6 +69,17 @@ export class AgentController {
   public approveStep(): void {
     this.stepApproved = true;
     this.logger.info('Step approved.');
+  }
+
+  public toggleAutoAttack(enabled?: boolean): boolean {
+    const newState = enabled !== undefined ? enabled : !this.reflex.isAutoAttackEnabled();
+    this.reflex.setAutoAttackEnabled(newState);
+    this.logger.info(`Auto-attack defense mode set to ${newState ? 'ENABLED' : 'DISABLED'}`);
+    return newState;
+  }
+
+  public isAutoAttackEnabled(): boolean {
+    return this.reflex.isAutoAttackEnabled();
   }
 
   public stop(): void {
@@ -381,6 +393,18 @@ export class AgentController {
     this.bot.on('entityHurt', (entity: any) => {
       if (entity === this.bot.entity) {
         this.recentEvents.damageTaken.push({ amount: 1, source: 'damage', timeAgoMs: 0 });
+
+        // Immediate counter-attack / defense reflex against nearby hostile
+        if (this.reflex.isAutoAttackEnabled()) {
+          const attacker = Object.values(this.bot.entities).find((e) => {
+            if (!e || e === this.bot.entity) return false;
+            const dist = distance3D(this.bot.entity.position, e.position);
+            return dist <= 4.0 && (e.type === 'mob' || e.type === 'hostile');
+          });
+          if (attacker) {
+            this.reflex.autoDefendAttacker(this.bot, attacker).catch(() => {});
+          }
+        }
       }
     });
   }
@@ -407,6 +431,14 @@ export class AgentController {
         this.approveStep();
         this.bot.chat('Single step approved.');
         break;
+      case 'attack':
+      case 'defend':
+      case 'autoattack': {
+        const state = argStr.toLowerCase() === 'off' ? false : true;
+        this.toggleAutoAttack(state);
+        this.bot.chat(`Auto-attack mode set to ${state ? 'ENABLED' : 'DISABLED'}.`);
+        break;
+      }
       case 'goal':
         if (argStr) {
           this.memory.setGoal(argStr);
@@ -414,7 +446,7 @@ export class AgentController {
         }
         break;
       default:
-        this.bot.chat(`Unknown command '${cmd}'. Available: !stop, !resume, !step, !goal <text>`);
+        this.bot.chat(`Unknown command '${cmd}'. Available: !stop, !resume, !step, !attack [on|off], !goal <text>`);
     }
   }
 }

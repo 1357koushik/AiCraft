@@ -64,6 +64,9 @@ export const ConfigSchema = z.object({
       eatFoodThreshold: z.number().default(14.0),
       escapeLavaWater: z.boolean().default(true),
       avoidMiningStraightDown: z.boolean().default(true),
+      autoAttackHostiles: z.boolean().default(true),
+      autoAttackRadius: z.number().default(3.8),
+      autoShieldBlock: z.boolean().default(true),
     }),
     dangerZones: z.array(
       z.object({
