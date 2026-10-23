@@ -277,8 +277,8 @@ export function buildCampaignFamilies(): ActionFamilySuite[] {
         {
           id: 'record_memory_normal',
           name: 'Record Memory: store fact note',
-          contractId: 'record_memory',
-          targetAction: 'record_memory',
+          contractId: 'remember',
+          targetAction: 'remember',
           params: { key: 'campaign_marker', note: 'Active run mark 1' },
           preconditionCheck: async () => ({ ok: true }),
           assertions: async (ctx, exec) => [
@@ -294,8 +294,8 @@ export function buildCampaignFamilies(): ActionFamilySuite[] {
         {
           id: 'record_memory_negative',
           name: 'Record Memory: reject missing key/note',
-          contractId: 'record_memory',
-          targetAction: 'record_memory',
+          contractId: 'remember',
+          targetAction: 'remember',
           params: {},
           preconditionCheck: async () => ({ ok: true }),
           assertions: async (ctx, exec) => [
@@ -1758,8 +1758,8 @@ export function buildCampaignFamilies(): ActionFamilySuite[] {
         {
           id: 'shoot_bow_negative_no_equipment',
           name: 'Shoot Bow: reject when bow or arrow is missing',
-          contractId: 'shoot_bow',
-          targetAction: 'shoot_bow',
+          contractId: 'shoot',
+          targetAction: 'shoot',
           params: { targetEntityId: 'e1' },
           preconditionCheck: async () => ({ ok: true }),
           assertions: async (ctx, exec) => [
@@ -1900,7 +1900,7 @@ export function buildCampaignFamilies(): ActionFamilySuite[] {
           id: 'memory_persistence_check',
           name: 'Memory: Persistence across restarts',
           contractId: 'system_memory_persistence',
-          targetAction: 'record_memory',
+          targetAction: 'remember',
           params: { key: 'lifecycle_test', note: 'Persistent test value' },
           preconditionCheck: async () => ({ ok: true }),
           assertions: async (ctx, exec) => [

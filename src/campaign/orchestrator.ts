@@ -180,11 +180,10 @@ export class CampaignOrchestrator {
           if (suite.id === 'family_17_not_implemented') {
             rowStatus = 'NOT_IMPLEMENTED';
           } else if (matchingReports.length === 0) {
-            // Evaluated through sibling macro or status check
-            const genericReport = scenarioReports[0];
-            rowStatus = genericReport?.status === 'PASS' ? 'LIVE_PASS' : 'LIVE_FAIL';
+            rowStatus = 'NOT_RUN';
           } else if (matchingReports.every((r) => r.status === 'PASS')) {
-            rowStatus = 'LIVE_PASS';
+            const hasObserverEvidence = matchingReports.some((r) => r.observedServerEvents && r.observedServerEvents.length > 0);
+            rowStatus = hasObserverEvidence ? 'LIVE_PASS' : 'UNIT_ONLY';
           } else if (matchingReports.some((r) => r.status === 'BLOCKED')) {
             rowStatus = 'BLOCKED';
           } else if (matchingReports.some((r) => r.status === 'INCONCLUSIVE')) {

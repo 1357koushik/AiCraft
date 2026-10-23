@@ -51,6 +51,8 @@ export const ACTION_NAME_ALIASES: Record<string, string> = {
   interact_with_entity: 'interact_entity',
   use_item_on_block: 'interact_block',
   till_soil: 'till',
+  record_memory: 'remember',
+  shoot_bow: 'shoot',
 };
 
 export class IntegrationScenarioRunner {

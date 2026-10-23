@@ -6,7 +6,7 @@ function generateCoverageReport(): void {
   const scenariosDir = path.resolve(process.cwd(), 'logs/integration/scenarios');
   const provenancePath = path.join(campaignDir, 'PROVENANCE.json');
   const summaryJsonPath = path.join(campaignDir, 'CAMPAIGN_SUMMARY.json');
-  const artifactDir = 'C:\\Users\\a\\.gemini\\antigravity\\brain\\55995d5f-627c-4a13-bd19-6d216de38042';
+  const artifactDir = 'C:\\Users\\a\\.gemini\\antigravity\\brain\\a2e3d296-708b-4039-b627-7e41e0c74dbd';
   const artifactPath = path.join(artifactDir, 'LIVE_ACTION_COVERAGE_CAMPAIGN_REPORT.md');
 
   // 1. Aggregate all 17 family test results
@@ -61,6 +61,7 @@ function generateCoverageReport(): void {
   const totalActionsEvaluated = actions.length; // 84
   const passedCount = actions.filter((r) => r.status === 'LIVE_PASS').length;
   const failedCount = actions.filter((r) => r.status === 'LIVE_FAIL').length;
+  const unitOnlyCount = actions.filter((r) => r.status === 'UNIT_ONLY').length;
   const blockedCount = actions.filter((r) => r.status === 'BLOCKED').length;
   const notImplCount = actions.filter((r) => r.status === 'NOT_IMPLEMENTED').length;
   const coveragePercentage = totalActionsEvaluated > 0 ? Number(((passedCount / totalActionsEvaluated) * 100).toFixed(1)) : 0;
@@ -71,7 +72,7 @@ function generateCoverageReport(): void {
   console.log('   GENERATING RECONCILED LIVE ACTION COVERAGE REPORT            ');
   console.log('================================================================');
   console.log(`Evaluated Actions & Techniques: ${totalActionsEvaluated}`);
-  console.log(`LIVE_PASS: ${passedCount} | LIVE_FAIL: ${failedCount} | BLOCKED: ${blockedCount} | NOT_IMPL: ${notImplCount}`);
+  console.log(`LIVE_PASS: ${passedCount} | LIVE_FAIL: ${failedCount} | UNIT_ONLY: ${unitOnlyCount} | BLOCKED: ${blockedCount} | NOT_IMPL: ${notImplCount}`);
   console.log(`Scenario Executions in scenarios/: ${scenarioRunsCount} (PASS: ${scenarioStatusCounts.PASS}, FAIL: ${scenarioStatusCounts.FAIL}, BLOCKED: ${scenarioStatusCounts.BLOCKED})`);
 
   // Build reconciled summary JSON
@@ -115,6 +116,8 @@ function generateCoverageReport(): void {
         ? '⛔ BLOCKED'
         : r.status === 'NOT_IMPLEMENTED'
         ? '⚪ NOT_IMPL'
+        : r.status === 'UNIT_ONLY'
+        ? '🔵 UNIT_ONLY'
         : '🟡 INCONCL';
     return `| \`${r.actionId}\` | ${r.isMacro ? 'Macro' : 'Primitive'} | \`${r.familyId}\` | ${badge} | ${r.scenariosRun || 1} | ${r.observedServerEventsCount || 0} |`;
   });
@@ -194,17 +197,17 @@ function generateCoverageReport(): void {
     `## Phase B Targeted Defect Fixes & Verification`,
     ``,
     `1. **\`goto\` Floating Target & Pillaring Restriction Fix**:`,
-    `   - *Defect*: When targeting mid-air locations ($Y+40$), \`goto\` attempted to pillar 40 blocks up instead of rejecting as unreachable.`,
-    `   - *Fix*: In \`src/actions/navigator.ts\` (\`evaluateCandidateTarget\`), added preflight evaluation that rejects targets $> 3$ blocks above the bot where ground and beneath are air. In \`src/actions/techniques.ts\` (\`updatePathfinderMovements\`), set \`allow1by1towers = false\` by default for all general movement.`,
-    `   - *Regression Verification*: Verified in \`tests/goto_unreachable_regression.test.ts\` (4/4 tests pass).`,
+    `   - *Defect*: When targeting mid-air locations ($Y+40$), \`goto\` attempted to pillar 40 blocks up instead of rejecting as unreachable. Candidates rejected during pre-flight evaluation were not indexed into \`navigationBlacklist\`, and silent completion without physical arrival falsely returned success.`,
+    `   - *Fix*: In \`src/actions/navigator.ts\` (\`evaluateCandidateTarget\`), added preflight evaluation that rejects targets $> 2$ blocks above bot with air below, and detects completely obstructed destinations inside solid blocks. Preflight rejections are immediately indexed into \`navigationBlacklist\`. Physical arrival within range is explicitly asserted. In \`src/actions/techniques.ts\`, pillaring is bounded to directly overhead logs ($\le 1.5$m horizontal) and strictly capped at $\le 4$ blocks.`,
+    `   - *Regression Verification*: Verified in \`tests/goto_unreachable_regression.test.ts\` (7/7 tests pass).`,
     `2. **Crafting-Count Correctness & Net Delta Verification**:`,
-    `   - *Defect*: Requesting 12 planks (3 recipe executions) stopped after 1 execution (4 planks) and reported success. \`craft_pipeline\` ignored \`params.count\`.`,
-    `   - *Fix*: In \`src/actions/inventory_crafting.ts\` and \`src/actions/techniques.ts\` (\`techniqueCraftPipeline\`), normalized \`count\` and delegated to \`ClosedLoopCraftingExecutor\` which verifies exact recipe multiplicity and asserts net inventory increase $\\ge$ requested count.`,
-    `   - *Regression Verification*: Verified in \`tests/crafting_count_regression.test.ts\` (5/5 tests pass).`,
-    `3. **Precondition Enforcement for Negative Scenarios (\`swim_up\` & \`dismount\`)**:`,
-    `   - *Defect*: \`swim_up\` and \`dismount\` returned success even when preconditions were violated (bot not in water, bot not riding a vehicle).`,
-    `   - *Fix*: Added synchronous precondition enforcement in \`swim_up.execute\` (\`bot.entity.isInWater\`) and \`dismount.execute\` (\`bot.vehicle\`), returning \`failed\` status upon violation.`,
-    `   - *Regression Verification*: Verified in \`tests/precondition_negative_regression.test.ts\` (4/4 tests pass).`,
+    `   - *Defect*: Requesting 12 planks (3 recipe executions) stopped after 1 execution (4 planks) and reported success. Root cause: \`src/agent/goals.ts\` divided needed planks by 4 (\`count: Math.ceil(needed / 4) = 3\`), which \`RecipeResolver\` subsequently divided by 4 again (\`Math.ceil(3 / 4) = 1\`).`,
+    `   - *Fix*: In \`src/agent/goals.ts\`, preserve output quantity directly (\`count: needed\`). In \`src/actions/crafting.ts\`, distinguish requested output quantity, recipe yield multiplier, required input batches, and actual inventory delta. Added partial feasibility accounting when input materials are insufficient.`,
+    `   - *Regression Verification*: Verified in \`tests/crafting_count_regression.test.ts\` (7/7 tests pass).`,
+    `3. **Precondition Enforcement for Negative Scenarios (\`set_goal\`, \`swim_up\` & \`dismount\`)**:`,
+    `   - *Defect*: \`set_goal\` accepted empty or whitespace-only strings without error. \`swim_up\` and \`dismount\` returned success even when preconditions were violated (bot not in water, bot not riding a vehicle).`,
+    `   - *Fix*: In \`src/actions/meta.ts\`, added strict string validation rejecting empty and whitespace-only goals. Added synchronous precondition enforcement in \`swim_up.execute\` (\`isBotInWater\`) and \`dismount.execute\` (\`isBotRiding\`), returning explicit \`failed\` status upon violation.`,
+    `   - *Regression Verification*: Verified in \`tests/precondition_negative_regression.test.ts\` (9/9 tests pass).`,
     ``,
     `---`,
     ``,
