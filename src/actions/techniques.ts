@@ -463,6 +463,8 @@ export async function techniqueVacuumDrops(
     if (!e.position) return false;
     // Skip drops in blacklist
     if (navigationBlacklist.isBlacklisted(e.position, 1.0)) return false;
+    // Only target drops within reasonable vertical range (not high in canopy or deep in ravine)
+    if (Math.abs(e.position.y - botPos.y) > 3.0) return false;
     // Do not dive into deep water or hazardous lava/fire to retrieve drops
     if (bot.blockAt) {
       const b = bot.blockAt(e.position);
@@ -478,20 +480,42 @@ export async function techniqueVacuumDrops(
     return { status: 'success', reason: 'No dropped items nearby to collect.' };
   }
 
+  // Sort items so closest are collected first
+  items.sort((a, b) => distance3D(botPos, a.position) - distance3D(botPos, b.position));
+
   console.log(`[VACUUM_DROPS] Found ${items.length} dropped item(s) within ${radius}m. Collecting...`);
   updatePathfinderMovements(bot);
   let collected = 0;
+  const vacuumDeadline = Date.now() + 6000; // Hard bounded window for drop collection
 
   try {
     for (const it of items.slice(0, 8)) {
-      if (abortSignal?.aborted || (isCurrent && !isCurrent())) {
-        return { status: 'interrupted', reason: 'Vacuum drops cancelled by abort signal / preemption.' };
+      if (abortSignal?.aborted || (isCurrent && !isCurrent()) || Date.now() > vacuumDeadline) {
+        break;
       }
+      // If item entity was already picked up or despawned, skip
+      if (!bot.entities[it.id]) {
+        collected++;
+        continue;
+      }
+      // If already within player pickup radius (1.5m), brief pause to let server pick it up
+      const currDist = bot.entity?.position ? distance3D(bot.entity.position, it.position) : 999;
+      if (currDist <= 1.5) {
+        collected++;
+        continue;
+      }
+
       try {
-        const goal = new goals.GoalNear(it.position.x, it.position.y, it.position.z, 0.6);
-        await (bot as any).pathfinder.goto(goal);
+        const goal = new goals.GoalNear(it.position.x, it.position.y, it.position.z, 1.2);
+        await Promise.race([
+          (bot as any).pathfinder.goto(goal),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Vacuum step timeout')), 1800)),
+        ]);
         collected++;
       } catch {
+        try {
+          (bot as any).pathfinder?.stop();
+        } catch {}
         if (abortSignal?.aborted || (isCurrent && !isCurrent())) {
           return { status: 'interrupted', reason: 'Vacuum drops cancelled during navigation.' };
         }
@@ -790,6 +814,9 @@ export async function techniqueChopTreeFull(
       for (const targetBlock of treeLogs) {
         if (abortSignal?.aborted || (isCurrent && !isCurrent())) break;
         if (!targetBlock?.position) continue;
+        if (countMatchingLogsInInventory(bot, options?.logType) >= targetTotal) {
+          break;
+        }
 
         // Verify the block is still a log
         const freshBlock = typeof bot.blockAt === 'function' ? bot.blockAt(targetBlock.position) : targetBlock;
@@ -823,6 +850,9 @@ export async function techniqueChopTreeFull(
           treeLogsCut++;
           totalLogsCut++;
           await new Promise((res) => setTimeout(res, 150));
+          if (countMatchingLogsInInventory(bot, options?.logType) >= targetTotal) {
+            break;
+          }
         } catch {
           break;
         }

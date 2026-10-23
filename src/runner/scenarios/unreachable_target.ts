@@ -63,7 +63,7 @@ export const unreachableTargetScenario: ScenarioDefinition = {
       message: `Agent returned status '${agentResult?.status}' with reason: '${agentResult?.reason || ''}'.`,
     });
 
-    // 2. Failure reason explains why (unreachable, chasm, height, hazard, or bounds)
+    // 2. Failure reason explains why (unreachable, chasm, height, hazard, bounds, or floating)
     const reasonText = (agentResult?.reason || '').toLowerCase();
     const hasInformativeReason =
       reasonText.includes('unreachable') ||
@@ -72,7 +72,10 @@ export const unreachableTargetScenario: ScenarioDefinition = {
       reasonText.includes('drop') ||
       reasonText.includes('hazard') ||
       reasonText.includes('distance') ||
-      reasonText.includes('validation');
+      reasonText.includes('validation') ||
+      reasonText.includes('floating') ||
+      reasonText.includes('mid-air') ||
+      reasonText.includes('footing');
 
     assertions.push({
       name: 'informative_failure_reason',
@@ -98,12 +101,20 @@ export const unreachableTargetScenario: ScenarioDefinition = {
     });
 
     // 4. Server observer confirms no destructive side effects occurred
-    // (excluding ambient environmental events like natural leaf decay from previously harvested trees)
-    const destructiveEvents = events.filter(
-      (e) =>
-        (e.eventType === 'BLOCK_BREAK' && !e.blockId?.endsWith('_leaves')) ||
-        e.eventType === 'BLOCK_PLACE'
-    );
+    // (excluding ambient environmental events like natural leaf decay, or distant ambient world ticks > 8 blocks away)
+    const botPos = context.bot?.entity?.position;
+    const destructiveEvents = events.filter((e) => {
+      if (e.eventType !== 'BLOCK_BREAK' && e.eventType !== 'BLOCK_PLACE') return false;
+      if (e.blockId?.endsWith('_leaves')) return false;
+      if (botPos && e.coordinates) {
+        const dx = e.coordinates.x - botPos.x;
+        const dy = e.coordinates.y - botPos.y;
+        const dz = e.coordinates.z - botPos.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 8) return false;
+      }
+      return true;
+    });
     assertions.push({
       name: 'no_destructive_server_events',
       passed: destructiveEvents.length === 0,

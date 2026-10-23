@@ -169,7 +169,7 @@ export class RecipeResolver {
       const hasTableInInventory = (simInventory['crafting_table'] || 0) > 0;
       const hasTableNearby = Boolean(
         this.bot.findBlock &&
-          this.bot.findBlock({ matching: (b: any) => b.name === 'crafting_table', maxDistance: 4.5 })
+          this.bot.findBlock({ matching: (b: any) => b.name === 'crafting_table', maxDistance: 48 })
       );
 
       if (!hasTableInInventory && !hasTableNearby) {
@@ -465,11 +465,11 @@ export class ClosedLoopCraftingExecutor {
 
           if (!existingTable && this.bot.findBlock) {
             // Check within reachable pathfinding distance
-            const distantTable = this.bot.findBlock({ matching: (b: any) => b.name === 'crafting_table', maxDistance: 16 });
+            const distantTable = this.bot.findBlock({ matching: (b: any) => b.name === 'crafting_table', maxDistance: 48 });
             if (distantTable && (this.bot as any).pathfinder) {
               try {
                 updatePathfinderMovements(this.bot);
-                const goal = new goals.GoalGetToBlock(distantTable.position.x, distantTable.position.y, distantTable.position.z);
+                const goal = new goals.GoalNear(distantTable.position.x, distantTable.position.y, distantTable.position.z, 2.5);
                 await (this.bot as any).pathfinder.goto(goal);
                 existingTable = distantTable;
               } catch {}
@@ -477,8 +477,26 @@ export class ClosedLoopCraftingExecutor {
           }
 
           if (!existingTable) {
-            // Must place crafting table from inventory
-            const tableItem = this.bot.inventory?.items().find((i) => i.name === 'crafting_table');
+            // Must place crafting table from inventory (or craft one on the fly from planks if available)
+            let tableItem = this.bot.inventory?.items().find((i) => i.name === 'crafting_table');
+            if (!tableItem) {
+              const registry = (this.bot as any).registry;
+              const tableDef = registry?.itemsByName?.['crafting_table'];
+              const plankItem = this.bot.inventory?.items().find((i) => i.name.endsWith('_planks') && i.count >= 4);
+              if (tableDef && plankItem && typeof this.bot.recipesFor === 'function' && typeof this.bot.craft === 'function') {
+                const tableRecipes = this.bot.recipesFor(tableDef.id, null, 1, null);
+                if (tableRecipes && tableRecipes.length > 0) {
+                  try {
+                    console.log(`[CRAFT_LOOP] Crafting new crafting table on the fly from ${plankItem.name}...`);
+                    await this.bot.craft(tableRecipes[0], 1, undefined);
+                    tableItem = this.bot.inventory?.items().find((i) => i.name === 'crafting_table');
+                  } catch (err: any) {
+                    console.warn(`[CRAFT_LOOP] On-the-fly table craft threw: ${err.message}`);
+                  }
+                }
+              }
+            }
+
             if (!tableItem) {
               return {
                 status: 'failed',

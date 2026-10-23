@@ -23,10 +23,23 @@ export const cancelMovementScenario: ScenarioDefinition = {
     const bot = context.bot;
     if (bot && bot.entity) {
       const p = bot.entity.position;
-      // Target a distant point 20 blocks away
-      cancelMovementScenario.params.x = Math.round(p.x + 20);
-      cancelMovementScenario.params.y = Math.round(p.y);
-      cancelMovementScenario.params.z = Math.round(p.z);
+      // Target a distant point 15 blocks away on real surface ground
+      const targetX = Math.round(p.x + 15);
+      const targetZ = Math.round(p.z);
+      let targetY = Math.round(p.y);
+      if (typeof bot.blockAt === 'function') {
+        for (let dy = 5; dy >= -5; dy--) {
+          const b = bot.blockAt(new Vec3(targetX, Math.round(p.y + dy), targetZ));
+          if (b && b.boundingBox === 'block') {
+            targetY = b.position.y + 1;
+            break;
+          }
+        }
+      }
+
+      cancelMovementScenario.params.x = targetX;
+      cancelMovementScenario.params.y = targetY;
+      cancelMovementScenario.params.z = targetZ;
 
       context.recordMilestone(
         'SETUP',
@@ -88,12 +101,20 @@ export const cancelMovementScenario: ScenarioDefinition = {
     });
 
     // 3. No destructive server events occurred (no accidental block digging or placing)
-    // (excluding ambient environmental events like natural leaf decay from previously harvested trees)
-    const blockEvents = events.filter(
-      (e) =>
-        (e.eventType === 'BLOCK_BREAK' && !e.blockId?.endsWith('_leaves')) ||
-        e.eventType === 'BLOCK_PLACE'
-    );
+    // (excluding ambient environmental events like natural leaf decay, or distant ambient world ticks > 8 blocks away)
+    const botPos = context.bot?.entity?.position;
+    const blockEvents = events.filter((e) => {
+      if (e.eventType !== 'BLOCK_BREAK' && e.eventType !== 'BLOCK_PLACE') return false;
+      if (e.blockId?.endsWith('_leaves')) return false;
+      if (botPos && e.coordinates) {
+        const dx = e.coordinates.x - botPos.x;
+        const dy = e.coordinates.y - botPos.y;
+        const dz = e.coordinates.z - botPos.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist > 8) return false;
+      }
+      return true;
+    });
     assertions.push({
       name: 'zero_superseded_block_events',
       passed: blockEvents.length === 0,

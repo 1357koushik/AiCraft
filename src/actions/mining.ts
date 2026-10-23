@@ -631,27 +631,70 @@ export async function techniqueGatherSurfaceResource(
 
   const initialCount = countResourceInInventory(bot, resourceType);
   const targetTotal = initialCount + count;
-  const scanRadius = ctx.config?.perception?.scanRadius || 32;
+  const scanRadius = Math.max(48, ctx.config?.perception?.scanRadius || 32);
 
   let mined = 0;
-  console.log(`[SURFACE_GATHER] Genuinely surface gathering for ${resourceType} x${count} (Y >= 50, open terrain)...`);
+  console.log(`[SURFACE_GATHER] Genuinely surface gathering for ${resourceType} x${count} (Y >= 50, open terrain, radius: ${scanRadius})...`);
 
   while (countResourceInInventory(bot, resourceType) < targetTotal) {
     if (!isActionContextActive(ctx)) {
       return { status: 'interrupted', reason: `Surface gathering cancelled (${mined} collected).` };
     }
 
-    // Find block strictly at surface elevation (Y >= 50) and not submerged
-    const targetBlock = bot.findBlock ? bot.findBlock({
-      matching: (b: any) => {
-        if (!isMatchingSurfaceBlock(b?.name, resourceType)) return false;
-        if (!b.position || b.position.y < 50) return false; // Strictly surface altitude!
-        if (b.name === 'water' || b.name === 'flowing_water' || b.name === 'lava') return false;
-        if (navigationBlacklist.isBlacklisted(b.position, 1.0)) return false;
-        return true;
-      },
-      maxDistance: scanRadius,
-    }) : null;
+    // Find blocks strictly at surface elevation (Y >= 50), not submerged, and with exposed face
+    let targetBlock: any = null;
+    if (typeof bot.findBlocks === 'function') {
+      const candidatePositions = bot.findBlocks({
+        matching: (b: any) => isMatchingSurfaceBlock(b?.name, resourceType),
+        maxDistance: scanRadius,
+        count: 40,
+      });
+
+      for (const pos of candidatePositions) {
+        if (pos.y < 50) continue; // Surface altitude
+        if (navigationBlacklist.isBlacklisted(pos, 1.0)) continue;
+        const blk = bot.blockAt ? bot.blockAt(pos) : null;
+        if (!blk) continue;
+        if (blk.name === 'water' || blk.name === 'flowing_water' || blk.name === 'lava') continue;
+
+        // Prefer blocks with exposed face
+        if (typeof bot.blockAt === 'function') {
+          const hasExposedFace = [
+            pos.offset(0, 1, 0),
+            pos.offset(0, -1, 0),
+            pos.offset(1, 0, 0),
+            pos.offset(-1, 0, 0),
+            pos.offset(0, 0, 1),
+            pos.offset(0, 0, -1),
+          ].some((p) => {
+            const nb = bot.blockAt(p);
+            return nb && (nb.name === 'air' || nb.name === 'cave_air' || nb.boundingBox !== 'block');
+          });
+          if (!hasExposedFace) continue;
+        }
+
+        targetBlock = blk;
+        break;
+      }
+
+      // If no exposed block found within candidates, take first non-blacklisted surface block
+      if (!targetBlock && candidatePositions.length > 0) {
+        for (const pos of candidatePositions) {
+          if (pos.y >= 50 && !navigationBlacklist.isBlacklisted(pos, 1.0)) {
+            targetBlock = bot.blockAt ? bot.blockAt(pos) : null;
+            if (targetBlock) break;
+          }
+        }
+      }
+    } else if (typeof bot.findBlock === 'function') {
+      targetBlock = bot.findBlock({
+        matching: (b: any) => isMatchingSurfaceBlock(b?.name, resourceType) && (!b.position || b.position.y >= 50),
+        maxDistance: scanRadius,
+      });
+      if (targetBlock && targetBlock.position && targetBlock.position.y < 50) {
+        targetBlock = null;
+      }
+    }
 
     if (!targetBlock) {
       const collectedSoFar = countResourceInInventory(bot, resourceType) - initialCount;
@@ -675,13 +718,13 @@ export async function techniqueGatherSurfaceResource(
       continue;
     }
 
-    // Approach block
+    // Approach block using GoalNear within interaction range
     const eyePos = bot.entity?.position ? bot.entity.position.offset(0, 1.6, 0) : null;
     const dist = eyePos ? distance3D(eyePos, targetBlock.position) : 0;
-    if (dist > 4.2 && (bot as any).pathfinder) {
+    if (dist > 3.5 && (bot as any).pathfinder) {
       try {
         updatePathfinderMovements(bot);
-        const goal = new goals.GoalGetToBlock(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z);
+        const goal = new goals.GoalNear(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z, 2.5);
         await (bot as any).pathfinder.goto(goal);
       } catch {
         navigationBlacklist.recordFailure(targetBlock.position, 'unreachable', 'UNREACHABLE', 30_000);
@@ -742,7 +785,10 @@ function isMatchingSurfaceBlock(blockName: string, query: string): boolean {
   if (q === 'sand') return b === 'sand' || b === 'red_sand';
   if (q === 'gravel') return b === 'gravel';
   if (q === 'clay') return b === 'clay';
-  if (q === 'stone') return b === 'stone' || b === 'cobblestone' || b === 'granite' || b === 'diorite' || b === 'andesite';
+  if (q === 'stone' || q === 'cobblestone') return b === 'stone' || b === 'cobblestone' || b === 'deepslate' || b === 'cobbled_deepslate';
+  if (q === 'granite') return b === 'granite';
+  if (q === 'diorite') return b === 'diorite';
+  if (q === 'andesite') return b === 'andesite';
   if (q === 'wood') return b.includes('_log');
   return b.includes(q);
 }
@@ -755,7 +801,7 @@ function isMatchingSurfaceItem(itemName: string, query: string): boolean {
   if (q === 'sand') return it === 'sand' || it === 'red_sand';
   if (q === 'gravel') return it === 'gravel' || it === 'flint';
   if (q === 'clay') return it === 'clay_ball' || it === 'clay';
-  if (q === 'stone') return it === 'cobblestone' || it === 'stone';
+  if (q === 'stone' || q === 'cobblestone') return it === 'cobblestone' || it === 'stone' || it === 'cobbled_deepslate' || it === 'deepslate';
   if (q === 'wood') return it.includes('_log');
   return it.includes(q);
 }

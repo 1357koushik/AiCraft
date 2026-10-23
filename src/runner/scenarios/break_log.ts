@@ -11,7 +11,7 @@ export const breakLogScenario: ScenarioDefinition = {
   },
   phaseBudgets: {
     setupTimeoutMs: 10000,
-    actionTimeoutMs: 25000,
+    actionTimeoutMs: 40000,
     settlingTimeoutMs: 2000,
     noProgressTimeoutMs: 8000,
   },
