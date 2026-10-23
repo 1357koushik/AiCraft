@@ -454,6 +454,92 @@ export class DeterministicGoalResolver {
       };
     }
 
+    // 2b. Have Tool Goal: stone_pickaxe
+    if (spec.kind === 'have_tool' && spec.tool === 'stone_pickaxe') {
+      const hasStonePick = (currentInventory['stone_pickaxe'] || 0) >= 1;
+      const hasWoodPick = hasStonePick || (currentInventory['wooden_pickaxe'] || 0) >= 1;
+      const stickCount = currentInventory['stick'] || 0;
+      const cobbleCount = (currentInventory['cobblestone'] || 0) + (currentInventory['stone'] || 0);
+
+      // Task 1: Wood Pickaxe prerequisite (satisfiable immediately if already in inventory)
+      tasks.push({
+        id: 'task_have_wooden_pickaxe',
+        type: 'gather',
+        actionName: hasWoodPick ? 'wait' : 'craft_item',
+        params: hasWoodPick ? { seconds: 0.1 } : { item: 'wooden_pickaxe', count: 1 },
+        prerequisites: [],
+        status: hasWoodPick ? 'satisfied' : 'ready',
+        retryCount: 0,
+        maxRetries: 2,
+        evidence: hasWoodPick ? ['Wooden pickaxe prerequisite already satisfied'] : [],
+        postcondition: (bot: any) => {
+          const c = getBotInventoryCounts(bot);
+          return (c['wooden_pickaxe'] || 0) >= 1 || (c['stone_pickaxe'] || 0) >= 1;
+        },
+      });
+
+      // Task 2: Mine Cobblestone
+      const cobbleSatisfied = hasStonePick || cobbleCount >= 3;
+      tasks.push({
+        id: 'task_mine_cobblestone',
+        type: 'gather',
+        actionName: 'collect_resource',
+        params: { resource: 'stone', count: 3 },
+        prerequisites: ['task_have_wooden_pickaxe'],
+        status: cobbleSatisfied ? 'satisfied' : hasWoodPick ? 'ready' : 'pending',
+        retryCount: 0,
+        maxRetries: 3,
+        budgetMs: 60000,
+        evidence: cobbleSatisfied ? ['Cobblestone prerequisite already satisfied'] : [],
+        postcondition: (bot: any) => {
+          const c = getBotInventoryCounts(bot);
+          return ((c['cobblestone'] || 0) + (c['stone'] || 0)) >= 3 || (c['stone_pickaxe'] || 0) >= 1;
+        },
+      });
+
+      // Task 3: Craft Sticks (if needed)
+      const sticksSatisfied = hasStonePick || stickCount >= 2;
+      tasks.push({
+        id: 'task_craft_sticks',
+        type: 'craft',
+        actionName: 'craft_item',
+        params: { item: 'stick', count: 1 },
+        prerequisites: [],
+        status: sticksSatisfied ? 'satisfied' : 'ready',
+        retryCount: 0,
+        maxRetries: 2,
+        evidence: sticksSatisfied ? ['Sticks prerequisite already present in inventory'] : [],
+        postcondition: (bot: any) => {
+          const c = getBotInventoryCounts(bot);
+          return (c['stick'] || 0) >= 2 || (c['stone_pickaxe'] || 0) >= 1;
+        },
+      });
+
+      // Task 4: Craft Stone Pickaxe
+      tasks.push({
+        id: 'task_craft_stone_pickaxe',
+        type: 'craft',
+        actionName: 'craft_item',
+        params: { item: 'stone_pickaxe', count: 1 },
+        prerequisites: ['task_mine_cobblestone', 'task_craft_sticks'],
+        status: hasStonePick ? 'satisfied' : cobbleSatisfied && sticksSatisfied ? 'ready' : 'pending',
+        retryCount: 0,
+        maxRetries: 2,
+        evidence: hasStonePick ? ['Stone pickaxe already present in inventory'] : [],
+        postcondition: (bot: any) => {
+          const c = getBotInventoryCounts(bot);
+          return (c['stone_pickaxe'] || 0) >= 1;
+        },
+      });
+
+      return {
+        goalId: spec.id,
+        tasks,
+        createdAt: now,
+        status: hasStonePick ? 'completed' : 'active',
+      };
+    }
+
     // 3. Reach Goal
     if (spec.kind === 'reach') {
       tasks.push({

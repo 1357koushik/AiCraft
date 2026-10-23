@@ -128,6 +128,41 @@ describe('Goal/Task Execution Foundation (Phase 2, Layer 4)', () => {
       // Wooden pickaxe is pending sticks
       expect(taskPick?.status).toBe('pending');
     });
+
+    it('builds DAG for stone pickaxe progression with cobblestone mining and tool requirements', () => {
+      // Bot starts with wooden pickaxe and sticks, needs cobblestone
+      const inventory = {
+        wooden_pickaxe: 1,
+        stick: 4,
+        crafting_table: 1,
+      };
+      const spec = parseAndValidateGoalSpec('craft a stone pickaxe', inventory, true)!;
+      expect(spec).not.toBeNull();
+      expect(spec.kind).toBe('have_tool');
+      expect((spec as any).tool).toBe('stone_pickaxe');
+
+      const plan = DeterministicGoalResolver.resolve(spec, inventory);
+      expect(plan).not.toBeNull();
+      expect(plan?.tasks.length).toBe(4);
+
+      const taskWoodPick = plan?.tasks.find((t) => t.id === 'task_have_wooden_pickaxe');
+      const taskMineCobble = plan?.tasks.find((t) => t.id === 'task_mine_cobblestone');
+      const taskSticks = plan?.tasks.find((t) => t.id === 'task_craft_sticks');
+      const taskStonePick = plan?.tasks.find((t) => t.id === 'task_craft_stone_pickaxe');
+
+      // Wooden pickaxe and sticks are already satisfied!
+      expect(taskWoodPick?.status).toBe('satisfied');
+      expect(taskSticks?.status).toBe('satisfied');
+
+      // Mine cobblestone is ready to execute immediately
+      expect(taskMineCobble?.status).toBe('ready');
+      expect(taskMineCobble?.actionName).toBe('collect_resource');
+      expect(taskMineCobble?.params.resource).toBe('stone');
+
+      // Stone pickaxe is pending cobblestone mining
+      expect(taskStonePick?.status).toBe('pending');
+      expect(taskStonePick?.prerequisites).toContain('task_mine_cobblestone');
+    });
   });
 
   // =========================================================================
