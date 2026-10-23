@@ -1,0 +1,6 @@
+name: GroundTruthObserver
+version: 1.0.0
+main: ai.dragon.observer.GroundTruthObserverPlugin
+api-version: '1.21'
+author: Antigravity AI
+description: Independent read-only ground-truth server-side observer for Minecraft AI testing

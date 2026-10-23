@@ -1,0 +1,12 @@
+# GroundTruthObserver Configuration
+observer:
+  run-id: "live_run"
+  log-dir: "../logs/integration"
+  max-log-size-mb: 50
+  max-log-files: 5
+  snapshot-interval-ticks: 20 # 1 second periodic snapshot (20 ticks)
+  bridge:
+    enabled: true
+    host: "127.0.0.1"
+    port: 25580
+    token-file: "../logs/integration/.bridge_token"
