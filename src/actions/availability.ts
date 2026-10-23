@@ -8,6 +8,7 @@ import {
 } from '../types/index.js';
 import { actionMap, allActions } from './registry.js';
 import { AppConfig } from '../config/index.js';
+import { validateActionParams } from '../prompt/schema.js';
 
 export class AvailabilityEngine {
   public static computeAvailableCatalog(
@@ -65,6 +66,12 @@ export class AvailabilityEngine {
       return { valid: false, reason: `Action "${actionName}" is blocked by safety configuration.` };
     }
 
+    // Parameter validity checks (numerical bounds, types, enums, allowed keys)
+    const paramValidation = validateActionParams(actionName, params || {});
+    if (!paramValidation.valid) {
+      return { valid: false, reason: paramValidation.reason };
+    }
+
     const ctx: ActionExecutionContext = { bot, observation: obs, config, logger };
     const available = act.isAvailable(bot, obs, ctx);
     if (!available) {
@@ -96,7 +103,10 @@ export class AvailabilityEngine {
     config: AppConfig,
     logger: any,
     abortSignal?: AbortSignal,
-    timeoutMs: number = 25000
+    timeoutMs: number = 25000,
+    actionId?: string,
+    arbiter?: any,
+    epoch?: number
   ): Promise<ActionResult> {
     const act = actionMap.get(actionName);
     if (!act) {
@@ -107,16 +117,49 @@ export class AvailabilityEngine {
       return { status: 'interrupted', reason: `Action "${actionName}" was aborted before execution.` };
     }
 
-    const ctx: ActionExecutionContext = { bot, observation: obs, config, logger, abortSignal };
+    const timeoutController = new AbortController();
+    const effectiveSignal = abortSignal
+      ? (typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([abortSignal, timeoutController.signal])
+          : abortSignal)
+      : timeoutController.signal;
+
+    let forwardAbort: (() => void) | null = null;
+    if (abortSignal && typeof AbortSignal.any !== 'function') {
+      forwardAbort = () => timeoutController.abort(abortSignal.reason);
+      if (abortSignal.aborted) {
+        timeoutController.abort(abortSignal.reason);
+      } else {
+        abortSignal.addEventListener('abort', forwardAbort, { once: true });
+      }
+    }
+
+    const ctx: ActionExecutionContext = {
+      bot,
+      observation: obs,
+      config,
+      logger,
+      abortSignal: effectiveSignal,
+      actionId,
+      epoch,
+      isCurrent: () => {
+        if (effectiveSignal.aborted) return false;
+        if (arbiter && actionId && epoch !== undefined) return arbiter.isCurrent(actionId, epoch);
+        if (arbiter && actionId) return arbiter.isActionActive(actionId);
+        return true;
+      },
+    };
 
     let timer: NodeJS.Timeout | null = null;
     let onAbort: (() => void) | null = null;
 
     const timeoutPromise = new Promise<ActionResult>((resolve) => {
       timer = setTimeout(() => {
+        // Abort timeout controller so effectiveSignal aborts across all underlying operations
+        timeoutController.abort(new Error(`Action "${actionName}" timed out after ${timeoutMs}ms.`));
         try {
-          (bot as any).pathfinder?.stop();
           (bot as any).pathfinder?.setGoal(null);
+          (bot as any).pathfinder?.stop();
         } catch {}
         try {
           bot.clearControlStates();
@@ -130,8 +173,8 @@ export class AvailabilityEngine {
       if (abortSignal) {
         onAbort = () => {
           try {
-            (bot as any).pathfinder?.stop();
             (bot as any).pathfinder?.setGoal(null);
+            (bot as any).pathfinder?.stop();
           } catch {}
           try {
             bot.clearControlStates();
@@ -156,6 +199,9 @@ export class AvailabilityEngine {
       if (timer) clearTimeout(timer);
       if (abortSignal && onAbort) {
         abortSignal.removeEventListener('abort', onAbort);
+      }
+      if (abortSignal && forwardAbort) {
+        abortSignal.removeEventListener('abort', forwardAbort);
       }
     }
   }

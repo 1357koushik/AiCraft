@@ -8,8 +8,16 @@ import {
   techniqueMineStaircase,
   techniqueBuildShelter,
   techniqueVacuumDrops,
+  techniqueCollectResource,
   updatePathfinderMovements,
 } from './techniques.js';
+import {
+  techniqueMineOreVein,
+  techniqueGatherSurfaceResource,
+  isMatchingOreSpecies,
+} from './mining.js';
+import { techniqueBuildVerifiedShelter } from './shelter.js';
+import { isActionContextActive } from '../agent/arbiter.js';
 
 async function autoEquipBestTool(bot: Bot, block: any): Promise<void> {
   if (!bot.inventory) return;
@@ -50,6 +58,10 @@ export const miningBuildingActions: ActionDef[] = [
       blockType: obs.blocks.notableBlocks.map((b) => b.name),
     }),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Dig block cancelled before start.' };
+      }
+
       let targetBlock: any = null;
 
       if (params.x !== undefined && params.y !== undefined && params.z !== undefined) {
@@ -65,22 +77,58 @@ export const miningBuildingActions: ActionDef[] = [
         return { status: 'failed', reason: 'No diggable block found at target.' };
       }
 
-      const dist = distance3D(bot.entity.position.offset(0, 1.6, 0), targetBlock.position);
-      if (dist > 4.5) {
-        try {
-          const goal = new goals.GoalGetToBlock(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z);
-          await (bot as any).pathfinder.goto(goal);
-        } catch (err: any) {
-          return { status: 'failed', reason: `Cannot reach block: ${err.message}` };
+      // Pre-check: reject digging blocks submerged under water to prevent drowning
+      if (bot.blockAt) {
+        const above = bot.blockAt(targetBlock.position.offset(0, 1, 0));
+        if (targetBlock.name === 'water' || targetBlock.name === 'flowing_water' || above?.name === 'water' || above?.name === 'flowing_water') {
+          return { status: 'failed', reason: 'Cannot dig submerged block (drowning hazard).' };
         }
       }
 
+      const dist = distance3D(bot.entity.position.offset(0, 1.6, 0), targetBlock.position);
+      if (dist > 4.5) {
+        let onAbort: (() => void) | null = null;
+        try {
+          updatePathfinderMovements(bot);
+          const goal = new goals.GoalGetToBlock(targetBlock.position.x, targetBlock.position.y, targetBlock.position.z);
+          if (ctx.abortSignal) {
+            onAbort = () => {
+              try { (bot as any).pathfinder?.stop(); } catch {}
+            };
+            ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+          }
+          await (bot as any).pathfinder.goto(goal);
+        } catch (err: any) {
+          if (!isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Dig block cancelled during navigation.' };
+          }
+          return { status: 'failed', reason: `Cannot reach block: ${err.message}` };
+        } finally {
+          if (ctx.abortSignal && onAbort) ctx.abortSignal.removeEventListener('abort', onAbort);
+          if (isActionContextActive(ctx)) {
+            try { (bot as any).pathfinder?.stop(); } catch {}
+            bot.clearControlStates?.();
+          }
+        }
+      }
+
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Dig block cancelled before tool equip.' };
+      }
+
       await autoEquipBestTool(bot, targetBlock);
+
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Dig block cancelled before dig.' };
+      }
 
       try {
         await bot.dig(targetBlock);
         return { status: 'success', reason: `Dug ${targetBlock.name} at ${targetBlock.position.x}, ${targetBlock.position.y}, ${targetBlock.position.z}.` };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Dig block cancelled during digging.' };
+        }
         return { status: 'failed', reason: `Digging interrupted: ${err.message}` };
       }
     },
@@ -102,32 +150,70 @@ export const miningBuildingActions: ActionDef[] = [
       const maxCount = Math.min(params.count || 1, 8);
       let minedCount = 0;
 
-      for (let i = 0; i < maxCount; i++) {
-        const block = bot.findBlock({
-          matching: (b) => b.name === targetType || b.name.includes(targetType),
-          maxDistance: ctx.config.perception.scanRadius || 16,
-        });
+      try {
+        for (let i = 0; i < maxCount; i++) {
+          if (!isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Mine resource cancelled by preemption signal.' };
+          }
 
-        if (!block) break;
+          const block = bot.findBlock({
+            matching: (b) => {
+              if (b.name !== targetType && !b.name.includes(targetType)) return false;
+              if (b.name === 'water' || b.name === 'flowing_water') return false;
+              if (b.position) {
+                const ab = bot.blockAt ? bot.blockAt(b.position.offset(0, 1, 0)) : null;
+                if (ab?.name === 'water' || ab?.name === 'flowing_water') return false;
+              }
+              return true;
+            },
+            maxDistance: ctx.config.perception.scanRadius || 16,
+          });
 
-        const dist = distance3D(bot.entity.position, block.position);
-        if (dist > 4.0) {
+          if (!block || !block.position) break;
+          if (bot.blockAt) {
+            const ab = bot.blockAt(block.position.offset(0, 1, 0));
+            if (ab?.name === 'water' || ab?.name === 'flowing_water') continue;
+          }
+
+          const dist = distance3D(bot.entity.position, block.position);
+          if (dist > 4.0) {
+            try {
+              updatePathfinderMovements(bot);
+              const goal = new goals.GoalLookAtBlock(block.position, bot.world);
+              await (bot as any).pathfinder.goto(goal);
+            } catch {
+              if (!isActionContextActive(ctx)) {
+                return { status: 'interrupted', reason: 'Mine resource cancelled during navigation.' };
+              }
+              break;
+            }
+          }
+
+          if (!isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Mine resource cancelled before tool equip.' };
+          }
+
+          await autoEquipBestTool(bot, block);
+
+          if (!isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Mine resource cancelled before dig.' };
+          }
+
           try {
-            const goal = new goals.GoalLookAtBlock(block.position, bot.world);
-            await (bot as any).pathfinder.goto(goal);
+            await bot.dig(block);
+            minedCount++;
+            await new Promise((res) => setTimeout(res, 200));
           } catch {
+            if (!isActionContextActive(ctx)) {
+              return { status: 'interrupted', reason: 'Mine resource cancelled during dig.' };
+            }
             break;
           }
         }
-
-        await autoEquipBestTool(bot, block);
-
-        try {
-          await bot.dig(block);
-          minedCount++;
-          await new Promise((res) => setTimeout(res, 200));
-        } catch {
-          break;
+      } finally {
+        if (isActionContextActive(ctx)) {
+          try { (bot as any).pathfinder?.stop(); } catch {}
+          bot.clearControlStates?.();
         }
       }
 
@@ -143,10 +229,17 @@ export const miningBuildingActions: ActionDef[] = [
     description: 'Autonomous macro: Navigates to tree, clears obstructing leaves, chops logs base-to-top, towers up if tall, and auto-vacuums all dropped wood/saplings.',
     parameterSchema: {
       logType: { type: 'string', description: 'Optional log name (e.g. oak_log)' },
+      count: { type: 'number', description: 'Optional number of logs to gather' },
     },
-    isAvailable: (bot, obs) => obs.vitals.isAlive && obs.blocks.notableBlocks.some((b) => b.name.includes('log')),
+    isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniqueChopTreeFull(bot, ctx.config.perception.scanRadius || 16, ctx.abortSignal);
+      return techniqueChopTreeFull(
+        bot,
+        ctx.config.perception.scanRadius || 48,
+        ctx.abortSignal,
+        ctx.isCurrent,
+        params
+      );
     },
   },
   {
@@ -166,6 +259,10 @@ export const miningBuildingActions: ActionDef[] = [
       face: ['top', 'north', 'south', 'east', 'west', 'bottom'],
     }),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Place block cancelled before start.' };
+      }
+
       const itemName = params.item;
       const invItem = bot.inventory.items().find((it) => it.name === itemName);
       if (!invItem) {
@@ -192,11 +289,21 @@ export const miningBuildingActions: ActionDef[] = [
       else if (params.face === 'west') faceVec = new Vec3(-1, 0, 0);
       else if (params.face === 'bottom') faceVec = new Vec3(0, -1, 0);
 
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Place block cancelled before equip.' };
+      }
+
       try {
         await bot.equip(invItem, 'hand');
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Place block cancelled before placement.' };
+        }
         await bot.placeBlock(refBlock, faceVec);
         return { status: 'success', reason: `Placed ${itemName} at ${refPos.x + faceVec.x}, ${refPos.y + faceVec.y}, ${refPos.z + faceVec.z}.` };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Place block cancelled during placement.' };
+        }
         return { status: 'failed', reason: `Failed to place block: ${err.message}` };
       }
     },
@@ -214,13 +321,27 @@ export const miningBuildingActions: ActionDef[] = [
       }
 
       let collected = 0;
-      for (const item of droppedItems.slice(0, 3)) {
-        try {
-          const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 0.5);
-          await (bot as any).pathfinder.goto(goal);
-          collected++;
-        } catch {
-          continue;
+      try {
+        for (const item of droppedItems.slice(0, 3)) {
+          if (!isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Collect items cancelled by preemption signal.' };
+          }
+          try {
+            updatePathfinderMovements(bot);
+            const goal = new goals.GoalNear(item.position.x, item.position.y, item.position.z, 0.5);
+            await (bot as any).pathfinder.goto(goal);
+            collected++;
+          } catch {
+            if (!isActionContextActive(ctx)) {
+              return { status: 'interrupted', reason: 'Collect items cancelled during movement.' };
+            }
+            continue;
+          }
+        }
+      } finally {
+        if (isActionContextActive(ctx)) {
+          try { (bot as any).pathfinder?.stop(); } catch {}
+          bot.clearControlStates?.();
         }
       }
 
@@ -238,7 +359,10 @@ export const miningBuildingActions: ActionDef[] = [
       const items = obs.inventory.aggregates.totalItemCounts;
       return obs.vitals.isAlive && (Boolean(items['bucket']) || Boolean(items['water_bucket']) || Boolean(items['lava_bucket']));
     },
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Use bucket cancelled before start.' };
+      }
       const action = params.action || 'fill';
       const items = bot.inventory.items();
       if (action === 'fill') {
@@ -247,12 +371,18 @@ export const miningBuildingActions: ActionDef[] = [
         const liquidBlock = bot.findBlock({ matching: (b) => b.name === 'water' || b.name === 'lava', maxDistance: 4 });
         if (!liquidBlock) return { status: 'failed', reason: 'No liquid block in reach.' };
         await bot.equip(bucket, 'hand');
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Use bucket cancelled after equip.' };
+        }
         await bot.activateBlock(liquidBlock);
         return { status: 'success', reason: `Filled bucket with ${liquidBlock.name}.` };
       } else {
         const fullBucket = items.find((i) => i.name === 'water_bucket' || i.name === 'lava_bucket');
         if (!fullBucket) return { status: 'failed', reason: 'No water/lava bucket in inventory.' };
         await bot.equip(fullBucket, 'hand');
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Use bucket cancelled after equip.' };
+        }
         bot.activateItem();
         return { status: 'success', reason: `Emptied ${fullBucket.name}.` };
       }
@@ -264,12 +394,18 @@ export const miningBuildingActions: ActionDef[] = [
     description: 'Till dirt or grass into farmland using a hoe.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.isAlive && Boolean(obs.inventory.toolSummary.bestHoe),
-    execute: async (bot: Bot): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Till cancelled before start.' };
+      }
       const dirt = bot.findBlock({ matching: (b) => b.name === 'dirt' || b.name === 'grass_block', maxDistance: 4 });
       if (!dirt) return { status: 'failed', reason: 'No dirt or grass in reach.' };
       const hoe = bot.inventory.items().find((i) => i.name.includes('_hoe'));
       if (!hoe) return { status: 'failed', reason: 'No hoe in inventory.' };
       await bot.equip(hoe, 'hand');
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Till cancelled after equip.' };
+      }
       await bot.activateBlock(dirt);
       return { status: 'success', reason: 'Tilled block into farmland.' };
     },
@@ -285,13 +421,19 @@ export const miningBuildingActions: ActionDef[] = [
       const counts = obs.inventory.aggregates.totalItemCounts;
       return obs.vitals.isAlive && (Boolean(counts['wheat_seeds']) || Boolean(counts['carrot']) || Boolean(counts['potato']));
     },
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Plant cancelled before start.' };
+      }
       const seedName = params.seed || 'wheat_seeds';
       const seedItem = bot.inventory.items().find((i) => i.name === seedName);
       if (!seedItem) return { status: 'failed', reason: `No ${seedName} in inventory.` };
       const farmland = bot.findBlock({ matching: (b) => b.name === 'farmland', maxDistance: 4 });
       if (!farmland) return { status: 'failed', reason: 'No farmland in reach.' };
       await bot.equip(seedItem, 'hand');
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Plant cancelled after equip.' };
+      }
       await bot.placeBlock(farmland, new Vec3(0, 1, 0));
       return { status: 'success', reason: `Planted ${seedName}.` };
     },
@@ -302,7 +444,10 @@ export const miningBuildingActions: ActionDef[] = [
     description: 'Harvest mature crops nearby.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.isAlive,
-    execute: async (bot: Bot): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Harvest cancelled before start.' };
+      }
       const matureCrop = bot.findBlock({
         matching: (b) => {
           if (['wheat', 'carrots', 'potatoes', 'beetroots'].includes(b.name)) {
@@ -328,17 +473,17 @@ export const miningBuildingActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniqueMineStaircase(bot, params.steps || 6, ctx.abortSignal);
+      return techniqueMineStaircase(bot, params.steps || 6, ctx.abortSignal, ctx.isCurrent);
     },
   },
   {
     name: 'build_shelter',
     category: 'mining_building',
-    description: 'Autonomous macro: Constructs a 3x3x3 dirt/cobblestone survival shelter with doorway and roof.',
+    description: 'Autonomous macro: Constructs a verified 3x3x3 dirt/cobblestone survival shelter with doorway, roof, and closed-loop physical enclosure verification.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniqueBuildShelter(bot, ctx.abortSignal);
+      return techniqueBuildVerifiedShelter(bot, {}, ctx);
     },
   },
   {
@@ -350,7 +495,58 @@ export const miningBuildingActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && obs.entities.some((e) => e.isItem),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniqueVacuumDrops(bot, params.radius || 10, ctx.abortSignal);
+      return techniqueVacuumDrops(bot, params.radius || 10, ctx.abortSignal, ctx.isCurrent);
+    },
+  },
+  {
+    name: 'mine_ore_vein',
+    category: 'mining_building',
+    description: 'Autonomous ore-vein extraction: identifies face-adjacent ore blocks (6 orthogonal neighbors only), validates tool harvest tier and local hazards, detects tool breakage, and verifies drop collection.',
+    parameterSchema: {
+      oreType: { type: 'string', description: 'Ore type name (e.g. coal_ore, iron_ore, copper_ore, diamond_ore)' },
+      count: { type: 'number', description: 'Maximum number of ore blocks to mine in vein (default 8)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
+    getAvailableChoices: (bot, obs) => ({
+      oreType: ['coal_ore', 'iron_ore', 'copper_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore'],
+    }),
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      const oreQuery = params.oreType || 'iron_ore';
+      const scanRadius = ctx.config?.perception?.scanRadius || 32;
+      const startBlock = bot.findBlock ? bot.findBlock({
+        matching: (b: any) => isMatchingOreSpecies(b?.name, oreQuery) || b?.name?.includes(oreQuery),
+        maxDistance: scanRadius,
+      }) : null;
+
+      if (!startBlock) {
+        return {
+          status: 'failed',
+          reason: `No ${oreQuery} found within ${scanRadius} blocks.`,
+          details: { failureKind: 'STALE_TARGET' },
+        };
+      }
+
+      return techniqueMineOreVein(bot, startBlock, { maxCount: params.count || 8 }, ctx);
+    },
+  },
+  {
+    name: 'collect_resource',
+    category: 'mining_building',
+    description: 'Autonomous macro: Gathers specified resource (wood, stone, coal, iron, dirt) up to required count, pathfinding, mining safely, and vacuuming drops.',
+    parameterSchema: {
+      resource: { type: 'string', description: 'Resource name (wood, stone, coal, iron, dirt)' },
+      count: { type: 'number', description: 'Number of blocks/items to gather (default 1)' },
+    },
+    isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
+    getAvailableChoices: () => ({
+      resource: ['wood', 'stone', 'coal', 'iron', 'dirt'],
+    }),
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      const resName = (params.resource || 'wood').toLowerCase();
+      if (['dirt', 'sand', 'gravel', 'clay', 'stone'].includes(resName)) {
+        return techniqueGatherSurfaceResource(bot, resName, params.count || 1, ctx);
+      }
+      return techniqueCollectResource(bot, params.resource || 'wood', params.count || 1, ctx.abortSignal, ctx.isCurrent);
     },
   },
 ];
