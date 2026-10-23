@@ -5,7 +5,7 @@ server:
   host: "127.0.0.1"
   port: 25565
   version: "1.21.6"
-  username: "AIAgentBot"
+  username: "dragonai"
   auth: "offline" # "offline" or "microsoft"
   autoReconnect: true
   reconnectMaxAttempts: 10
@@ -14,15 +14,15 @@ server:
 
 llm:
   # Provider options: "lmstudio", "openai", "anthropic", "mock"
-  provider: "lmstudio"
-  baseUrl: "http://127.0.0.1:1234/v1"
-  model: "default"
+  provider: "openai"
+  baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai"
+  model: "gemini-3.5-flash-lite"
   apiKeyEnv: "OPENAI_API_KEY"
   temperature: 0.3
   maxTokens: 1024
-  timeoutMs: 45000
-  jsonMode: true
-  allowCloudFallback: false
+  timeoutMs: 60000
+  jsonMode: false
+  allowCloudFallback: true
   fallbackProvider: null
 
 agent:
@@ -30,8 +30,8 @@ agent:
   historyLength: 8
   heartbeatIntervalMs: 1000
   handedness: "right"
-  owners: ["OwnerPlayer"] # Exact names of trusted players who can give instructions
-  friends: [] # Players who cannot be attacked
+  owners: ["OwnerPlayer", "1357koushik"] # Exact names of trusted players who can give instructions
+  friends: ["1357koushik"] # Players who cannot be attacked
   requestTimeoutMs: 30000
   maxRetriesOnMalformedJson: 2
   stepMode: false # When true, requires manual console approval per step
@@ -46,7 +46,7 @@ perception:
   tokenBudget: 2000
 
 safety:
-  protectedNames: ["OwnerPlayer"]
+  protectedNames: ["OwnerPlayer", "1357koushik"]
   protectedEntities: ["player", "wolf", "cat", "horse", "iron_golem"]
   blockedActions: ["run_command", "use_lava", "use_tnt"]
   allowCommandExecution: false

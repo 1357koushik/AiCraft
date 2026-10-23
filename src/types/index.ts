@@ -213,6 +213,26 @@ export interface EntityInfo {
   health: number | 'unknown';
 }
 
+export type PlanTaskType = 'gather' | 'craft' | 'smelt' | 'kill' | 'explore' | 'build' | 'generic';
+export type PlanStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+export interface PlanStepRequirement {
+  item: string;
+  count: number;
+}
+
+export interface PlanStep {
+  step: string;
+  completed: boolean;
+  type?: PlanTaskType;
+  targetItem?: string;
+  targetCount?: number;
+  currentCount?: number;
+  status?: PlanStepStatus;
+  requirements?: PlanStepRequirement[];
+  prerequisites?: string[];
+}
+
 export interface RecentEventsState {
   damageTaken: { amount: number; source: string; timeAgoMs: number }[];
   healthRegained: number;
@@ -221,6 +241,7 @@ export interface RecentEventsState {
   blocksBroken: string[];
   blocksPlaced: string[];
   mobsKilled: string[];
+  nearbyEntityDeaths: string[];
   deathRespawn: boolean;
   chatMessages: { sender: string; message: string; isOwner: boolean }[];
   reflexFired?: string;
@@ -239,21 +260,85 @@ export interface ContainerState {
   };
 }
 
+export interface ExploredRegionRecord {
+  chunkX: number;
+  chunkZ: number;
+  dimension: string;
+  lastVisitedAt: number;
+  visitCount: number;
+}
+
+export interface KnownLocationRecord {
+  id: string;
+  name: string;
+  type: 'base' | 'chest' | 'barrel' | 'crafting_table' | 'furnace' | 'shelter' | 'waypoint';
+  position: { x: number; y: number; z: number };
+  dimension: string;
+  observedAt: number;
+  provenance: 'direct_observation' | 'event';
+  metadata?: Record<string, any>;
+}
+
+export interface ResourceObservationRecord {
+  id: string;
+  resourceType: string;
+  position: { x: number; y: number; z: number };
+  dimension: string;
+  observedAt: number;
+  expiresAt: number;
+  confidence: number;
+  provenance: 'direct_observation' | 'event';
+}
+
+export interface FailedTargetMemoryRecord {
+  position: { x: number; y: number; z: number };
+  reason: string;
+  failureKind: string;
+  failedAt: number;
+  expiresAt: number;
+}
+
+export interface GoalOutcomeRecord {
+  goalId: string;
+  description: string;
+  outcome: 'success' | 'failed' | 'cancelled';
+  completedAt: number;
+  durationMs: number;
+  evidence: string;
+}
+
+export interface StrategyRankingRecord {
+  skill: string;
+  variant: string;
+  successCount: number;
+  failureCount: number;
+  totalDurationMs: number;
+  lastUsedAt: number;
+  score: number;
+}
+
 export interface MemoryNotes {
   namedLocations: Record<string, { x: number; y: number; z: number }>;
   facts: string[];
   dangerZones: { name: string; x: number; y: number; z: number; radius: number }[];
   completedGoals: string[];
+  exploredRegions?: ExploredRegionRecord[];
+  knownLocations?: KnownLocationRecord[];
+  resourceObservations?: ResourceObservationRecord[];
+  failedTargets?: FailedTargetMemoryRecord[];
+  goalOutcomes?: GoalOutcomeRecord[];
+  strategyRankings?: Record<string, StrategyRankingRecord>;
 }
 
 export interface AgentInternalState {
   currentGoal: string;
-  planSteps: { step: string; completed: boolean }[];
+  planSteps: PlanStep[];
   stepNumber: number;
   stuckCounter: number;
   timeSinceLastProgressSeconds: number;
   pendingOwnerInstruction?: string;
   activeActionName?: string;
+  isOwnerGoal?: boolean;
 }
 
 export interface Observation {
@@ -296,6 +381,9 @@ export interface ActionExecutionContext {
   abortSignal?: AbortSignal;
   logger: any;
   config: any;
+  actionId?: string;
+  epoch?: number;
+  isCurrent?: () => boolean;
 }
 
 export interface ActionDef {
@@ -337,4 +425,205 @@ export interface LLMResponseResult {
 export interface ILLMProvider {
   name: string;
   generateDecision(request: LLMRequest): Promise<LLMResponseResult>;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: World State, Event Reducer & Fact Provenance Types (Layer 1)
+// ---------------------------------------------------------------------------
+
+export type FactProvenance = 'event' | 'scan' | 'inference' | 'memory';
+
+export interface ObservedFact<T> {
+  value: T;
+  observedAt: number;
+  expiresAt: number;
+  confidence: number;
+  source: FactProvenance;
+  metadata?: Record<string, any>;
+}
+
+export interface CachedBlockFact {
+  name: string;
+  position: { x: number; y: number; z: number };
+  boundingBox?: string;
+  hardness?: number;
+  diggable?: boolean;
+}
+
+export interface CachedEntityFact {
+  id: number;
+  uuid?: string;
+  name: string;
+  type: string;
+  position: { x: number; y: number; z: number };
+  velocity?: { x: number; y: number; z: number };
+  height?: number;
+  width?: number;
+  health?: number;
+  isAlive: boolean;
+  isHostile: boolean;
+  isPlayer: boolean;
+  username?: string;
+}
+
+export interface CachedInventoryFact {
+  heldItem: string | null;
+  quickBarSlot: number;
+  itemCounts: Record<string, number>;
+  freeSlots: number;
+  windowOpen: boolean;
+  windowType: string | null;
+  windowId: number | null;
+}
+
+export interface CachedChunkFact {
+  chunkX: number;
+  chunkZ: number;
+  loadedAt: number;
+  isLoaded: boolean;
+}
+
+export interface TargetValidationResult {
+  valid: boolean;
+  reason?: string;
+  fact?: ObservedFact<any>;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Goals, Task Graph, & Execution Monitor Types (Layer 4)
+// ---------------------------------------------------------------------------
+
+export type GoalKind =
+  | 'have'
+  | 'have_tool'
+  | 'reach'
+  | 'explore'
+  | 'build'
+  | 'survive_until'
+  | 'kill'
+  | 'custom'
+  | 'idle';
+
+export interface GoalSpecBase {
+  id: string;
+  kind: GoalKind;
+  isOwnerGoal: boolean;
+  createdAt: number;
+  rawInstruction?: string;
+}
+
+export interface HaveGoalSpec extends GoalSpecBase {
+  kind: 'have';
+  item: string;
+  count: number;
+  mode: 'absolute' | 'additional';
+  baselineCount: number;
+}
+
+export interface HaveToolGoalSpec extends GoalSpecBase {
+  kind: 'have_tool';
+  tool: string;
+  tier?: string;
+}
+
+export interface ReachGoalSpec extends GoalSpecBase {
+  kind: 'reach';
+  target: { x: number; y: number; z: number };
+  tolerance?: number;
+}
+
+export interface ExploreGoalSpec extends GoalSpecBase {
+  kind: 'explore';
+  query?: string;
+  budgetSeconds?: number;
+}
+
+export interface KillGoalSpec extends GoalSpecBase {
+  kind: 'kill';
+  entityType: string;
+  count: number;
+}
+
+export interface CustomGoalSpec extends GoalSpecBase {
+  kind: 'custom';
+  description: string;
+}
+
+export interface IdleGoalSpec extends GoalSpecBase {
+  kind: 'idle';
+  reason?: string;
+}
+
+export type GoalSpec =
+  | HaveGoalSpec
+  | HaveToolGoalSpec
+  | ReachGoalSpec
+  | ExploreGoalSpec
+  | KillGoalSpec
+  | CustomGoalSpec
+  | IdleGoalSpec;
+
+export type TaskStatus =
+  | 'pending'
+  | 'ready'
+  | 'running'
+  | 'satisfied'
+  | 'succeeded'
+  | 'blocked'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled';
+
+export type FailureKind =
+  | 'TARGET_NOT_OBSERVED'
+  | 'TARGET_STALE'
+  | 'PATH_UNREACHABLE'
+  | 'PATH_STOPPED'
+  | 'PATH_TIMEOUT'
+  | 'NO_PROGRESS'
+  | 'POSTCONDITION_FAILED'
+  | 'RETRY_BUDGET_EXHAUSTED'
+  | 'PREREQUISITE_FAILED'
+  | 'CANCELLED'
+  | 'UNKNOWN';
+
+export interface TaskBaseline {
+  inventoryCounts: Record<string, number>;
+  position?: { x: number; y: number; z: number };
+  time: number;
+}
+
+export interface TaskNode {
+  id: string;
+  type: string;
+  actionName: string;
+  params: Record<string, any>;
+  prerequisites: string[];
+  status: TaskStatus;
+  retryCount: number;
+  maxRetries: number;
+  budgetMs?: number;
+  startedAt?: number;
+  completedAt?: number;
+  failureReason?: string;
+  failureKind?: FailureKind;
+  evidence: string[];
+  checkpoints?: Record<string, any>;
+  postcondition?: (bot: any, baseline: TaskBaseline) => Promise<boolean> | boolean;
+}
+
+export interface TaskPlan {
+  goalId: string;
+  tasks: TaskNode[];
+  createdAt: number;
+  status: 'active' | 'completed' | 'failed' | 'cancelled';
+}
+
+export interface TaskExecutionResult {
+  taskId: string;
+  status: TaskStatus;
+  failureKind?: FailureKind;
+  failureReason?: string;
+  evidence: string[];
+  durationMs: number;
 }

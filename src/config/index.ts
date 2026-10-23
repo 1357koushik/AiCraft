@@ -50,6 +50,7 @@ export const ConfigSchema = z.object({
     localMapHeightBelow: z.number().int().default(2),
     localMapHeightAbove: z.number().int().default(3),
     tokenBudget: z.number().int().default(2000),
+    includeAsciiMap: z.boolean().default(false),
   }),
   safety: z.object({
     protectedNames: z.array(z.string()).default(['OwnerPlayer']),

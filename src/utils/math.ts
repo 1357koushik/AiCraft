@@ -3,7 +3,7 @@ import { Bot } from 'mineflayer';
 import { Facing } from '../types/index.js';
 
 export function getFacing(yaw: number): Facing {
-  // yaw in mineflayer: 0 = south, PI/2 = west, PI or -PI = north, 3*PI/2 or -PI/2 = east
+  // yaw in mineflayer: 0 = north (-Z), PI/2 = west (-X), PI or -PI = south (+Z), 3*PI/2 or -PI/2 = east (+X)
   let normalizedYaw = yaw % (2 * Math.PI);
   if (normalizedYaw < 0) normalizedYaw += 2 * Math.PI;
 
@@ -11,11 +11,11 @@ export function getFacing(yaw: number): Facing {
   if (deg >= 45 && deg < 135) {
     return 'west';
   } else if (deg >= 135 && deg < 225) {
-    return 'north';
+    return 'south';
   } else if (deg >= 225 && deg < 315) {
     return 'east';
   } else {
-    return 'south';
+    return 'north';
   }
 }
 
