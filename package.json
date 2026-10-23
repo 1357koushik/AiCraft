@@ -5,9 +5,17 @@
   "main": "dist/main.js",
   "scripts": {
     "start": "tsx src/main.ts",
+    "auto": "tsx src/automation.ts",
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:mock": "vitest run tests/scenario_loop.test.ts tests/scenario_runner.test.ts tests/gather_logs_milestone.test.ts tests/action_manifest.test.ts",
+    "test:manifest": "tsx scripts/validate_manifest.ts",
+    "observer:build": "tsx scripts/build_observer.ts",
+    "test:live": "tsx scripts/run_live_scenarios.ts",
+    "test:campaign": "tsx scripts/run_campaign.ts",
+    "report:coverage": "tsx scripts/generate_coverage_report.ts",
     "test:watch": "vitest"
   },
   "keywords": [

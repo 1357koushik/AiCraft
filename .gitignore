@@ -1,6 +1,27 @@
 node_modules/
 dist/
-logs/*.jsonl
-data/test_memory/
-.env
+
+# Logs
+logs/
 *.log
+
+# Runtime session memory and test fixture states (preserves data/action_contract_manifest.json)
+data/memory-*.json
+data/test_*/
+data_backup/
+data_test_*/
+
+# Local Minecraft server runtime and world data
+server/
+
+# External reference repositories
+references/
+
+# Observer plugin maven build artifacts
+observer-plugin/target/
+target/
+
+# Environment and secrets
+.env
+.env.*
+
