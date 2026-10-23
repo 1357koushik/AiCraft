@@ -16,6 +16,14 @@ export interface TargetResolutionResult {
 }
 
 /**
+ * Universal vitality check: evaluates whether an entity is loaded, valid, and alive.
+ * In Minecraft/Mineflayer, e.health can be undefined for uninspected entities, but if numeric, must be > 0.
+ * A health of exactly 0 is dead / dying corpse.
+ */
+export const isAlive = (e: any): boolean =>
+  Boolean(e && (e as any).isValid !== false && ((e as any).health === undefined || (e as any).health > 0));
+
+/**
  * Resolves a target entity ID from an observation and verifies the live entity state.
  * Prevents targeting dead entities, despawned entities, ID reuse, and protected entities.
  */
@@ -47,11 +55,8 @@ export function resolveAndValidateTarget(
   }
 
   // 4. Validate that the live entity is alive and valid
-  if ((rawEntity as any).isValid === false) {
-    return { valid: false, reason: `Target entity '${targetObs.name}' is no longer valid.` };
-  }
-  if (typeof (rawEntity as any).health === 'number' && (rawEntity as any).health <= 0) {
-    return { valid: false, reason: `Target entity '${targetObs.name}' is dead.` };
+  if (!isAlive(rawEntity)) {
+    return { valid: false, reason: `Target entity '${targetObs.name}' is dead or no longer valid.` };
   }
 
   // 5. Prevent entity ID reuse / stale substitution:
