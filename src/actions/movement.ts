@@ -3,7 +3,9 @@ import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.js';
 import { distance3D } from '../utils/math.js';
-import { updatePathfinderMovements, techniquePillarUp, techniqueBridge } from './techniques.js';
+import { updatePathfinderMovements, techniquePillarUp, techniqueBridge, isMatchingResourceBlock } from './techniques.js';
+import { isActionContextActive } from '../agent/arbiter.js';
+import { navigateWithBounds, evaluateCandidateTarget, navigationBlacklist } from './navigator.js';
 
 export const movementActions: ActionDef[] = [
   {
@@ -34,21 +36,36 @@ export const movementActions: ActionDef[] = [
         return { status: 'interrupted', reason: 'Goto cancelled before start.' };
       }
 
+      let isHorizontalOnly = false;
       if (params.targetId) {
         if (params.targetId.startsWith('e')) {
-          const ent = ctx.observation.entities.find((e) => e.id === params.targetId);
+          const ent = ctx.observation?.entities?.find((e) => e.id === params.targetId);
           if (ent) {
             targetPos = new Vec3(ent.position.x, ent.position.y, ent.position.z);
+          } else {
+            return { status: 'failed', reason: `Target entity ${params.targetId} not found (stale target).` };
           }
         } else {
-          const block = bot.findBlock({
-            matching: (b) => b.name === params.targetId,
-            maxDistance: ctx.config.perception.scanRadius || 16,
-          });
-          if (block) targetPos = block.position;
+          const block = bot.findBlock
+            ? bot.findBlock({
+                matching: (b) => b.name === params.targetId,
+                maxDistance: ctx.config?.perception?.scanRadius || 16,
+              })
+            : null;
+          if (block) {
+            targetPos = block.position;
+          } else {
+            return { status: 'failed', reason: `Target block ${params.targetId} not found.` };
+          }
         }
-      } else if (params.x !== undefined && params.y !== undefined && params.z !== undefined) {
-        targetPos = new Vec3(params.x, params.y, params.z);
+      } else if (params.x !== undefined && params.z !== undefined) {
+        if (params.y !== undefined) {
+          targetPos = new Vec3(params.x, params.y, params.z);
+          isHorizontalOnly = false;
+        } else {
+          targetPos = new Vec3(params.x, bot.entity?.position?.y ?? 64, params.z);
+          isHorizontalOnly = true;
+        }
       }
 
       if (!targetPos) {
@@ -56,7 +73,7 @@ export const movementActions: ActionDef[] = [
       }
 
       const dist = distance3D(bot.entity.position, targetPos);
-      const maxAllowedDist = Math.max(32, (ctx.config.perception.scanRadius || 16) * 3);
+      const maxAllowedDist = Math.max(32, (ctx.config?.perception?.scanRadius || 16) * 3);
       if (dist > maxAllowedDist) {
         return {
           status: 'failed',
@@ -64,49 +81,41 @@ export const movementActions: ActionDef[] = [
         };
       }
 
-      // Pre-check destination safety if chunk loaded
-      const destBlock = bot.blockAt(targetPos);
-      const destGround = bot.blockAt(targetPos.offset(0, -1, 0));
-      if (destBlock?.name === 'lava' || destGround?.name === 'lava' || destBlock?.name === 'fire') {
-        return { status: 'failed', reason: 'Target destination is an unsafe lava or fire hazard.' };
+      console.log(`[GOTO] Navigating to (${targetPos.x.toFixed(1)}, ${targetPos.y.toFixed(1)}, ${targetPos.z.toFixed(1)}) [dist: ${dist.toFixed(1)}m, range: ${range}m, goal: ${isHorizontalOnly ? 'GoalNearXZ' : 'GoalNear'}]...`);
+
+      const navResult = await navigateWithBounds(
+        bot,
+        {
+          target: targetPos,
+          range,
+          intent: isHorizontalOnly ? 'horizontal' : '3d',
+        },
+        ctx
+      );
+
+      if (navResult.success) {
+        console.log(`[GOTO] Successfully arrived at (${targetPos.x.toFixed(1)}, ${targetPos.y.toFixed(1)}, ${targetPos.z.toFixed(1)})!`);
+        return {
+          status: 'success',
+          reason: `Reached target at ${targetPos.x}, ${targetPos.y}, ${targetPos.z}`,
+          details: { attempt: navResult.attempt },
+        };
       }
 
-      if (dist <= range) {
-        return { status: 'success', reason: `Already within range (${dist.toFixed(1)} blocks).` };
+      if (navResult.status === 'cancelled') {
+        return {
+          status: 'interrupted',
+          reason: navResult.reason,
+          details: { attempt: navResult.attempt },
+        };
       }
 
-      let onAbort: (() => void) | null = null;
-      try {
-        updatePathfinderMovements(bot);
-        const goal = new goals.GoalNear(targetPos.x, targetPos.y, targetPos.z, range);
-
-        if (ctx.abortSignal) {
-          onAbort = () => {
-            try {
-              (bot as any).pathfinder?.stop();
-              (bot as any).pathfinder?.setGoal(null);
-            } catch {}
-            bot.clearControlStates();
-          };
-          ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
-        }
-
-        await (bot as any).pathfinder.goto(goal);
-        return { status: 'success', reason: `Reached target at ${targetPos.x}, ${targetPos.y}, ${targetPos.z}` };
-      } catch (err: any) {
-        if (ctx.abortSignal?.aborted) {
-          return { status: 'interrupted', reason: 'Navigation cancelled by preemption signal.' };
-        }
-        return { status: 'failed', reason: `Pathfinding failed: ${err.message || 'path unreachable'}` };
-      } finally {
-        if (ctx.abortSignal && onAbort) {
-          ctx.abortSignal.removeEventListener('abort', onAbort);
-        }
-        try {
-          (bot as any).pathfinder?.stop();
-        } catch {}
-        bot.clearControlStates();
-      }
+      console.log(`[GOTO] Navigation failed: ${navResult.reason}`);
+      return {
+        status: 'failed',
+        reason: navResult.reason,
+        details: { failureKind: navResult.failureKind, attempt: navResult.attempt },
+      };
     },
   },
   {
@@ -124,6 +133,9 @@ export const movementActions: ActionDef[] = [
       return { targetId: obs.entities.map((e) => e.id) };
     },
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (ctx.abortSignal?.aborted) {
+        return { status: 'interrupted', reason: 'Follow cancelled before start.' };
+      }
       const entInfo = ctx.observation.entities.find((e) => e.id === params.targetId || e.name === params.targetId);
       if (!entInfo) {
         return { status: 'failed', reason: `Entity ${params.targetId} not found.` };
@@ -134,15 +146,50 @@ export const movementActions: ActionDef[] = [
       }
 
       const dist = params.distance || 3;
+      if (Boolean((rawEntity as any).isInWater) && !Boolean((bot.entity as any)?.isInWater)) {
+        return { status: 'failed', reason: 'Target entity entered water. Halting follow to prevent drowning.' };
+      }
+      let onAbort: (() => void) | null = null;
       try {
+        updatePathfinderMovements(bot);
         const goal = new goals.GoalFollow(rawEntity, dist);
-        // Follow for a short duration (up to 5 seconds)
+        if (ctx.abortSignal) {
+          onAbort = () => {
+            try {
+              (bot as any).pathfinder?.stop();
+              (bot as any).pathfinder?.setGoal(null);
+            } catch {}
+            bot.clearControlStates();
+          };
+          ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+        }
         (bot as any).pathfinder.setGoal(goal, true);
-        await new Promise((res) => setTimeout(res, 3000));
-        (bot as any).pathfinder.setGoal(null);
+
+        // Follow for a short duration while monitoring abort signal
+        for (let t = 0; t < 10; t++) {
+          if (ctx.abortSignal?.aborted) {
+            return { status: 'interrupted', reason: 'Follow cancelled by preemption signal.' };
+          }
+          await new Promise((res) => setTimeout(res, 300));
+        }
+
         return { status: 'success', reason: `Followed ${entInfo.name} successfully.` };
       } catch (err: any) {
+        if (ctx.abortSignal?.aborted) {
+          return { status: 'interrupted', reason: 'Follow cancelled by preemption signal.' };
+        }
         return { status: 'failed', reason: `Follow failed: ${err.message}` };
+      } finally {
+        if (ctx.abortSignal && onAbort) {
+          ctx.abortSignal.removeEventListener('abort', onAbort);
+        }
+        if (isActionContextActive(ctx)) {
+          try {
+            (bot as any).pathfinder?.setGoal(null);
+            (bot as any).pathfinder?.stop();
+          } catch {}
+          bot.clearControlStates();
+        }
       }
     },
   },
@@ -161,6 +208,9 @@ export const movementActions: ActionDef[] = [
       return { threatId: obs.entities.filter((e) => e.isHostile).map((e) => e.id) };
     },
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (ctx.abortSignal?.aborted) {
+        return { status: 'interrupted', reason: 'Flee cancelled before start.' };
+      }
       const threat = ctx.observation.entities.find((e) => e.id === params.threatId) || ctx.observation.entities.find((e) => e.isHostile);
       if (!threat) {
         return { status: 'failed', reason: 'No threat found to flee from.' };
@@ -168,18 +218,75 @@ export const movementActions: ActionDef[] = [
 
       const threatPos = new Vec3(threat.position.x, threat.position.y, threat.position.z);
       const botPos = bot.entity.position;
-      const fleeVec = botPos.minus(threatPos).normalize().scaled(params.distance || 10);
-      const destination = botPos.plus(fleeVec);
+      const rawFleeVec = botPos.minus(threatPos);
+      const horizontalDist = Math.hypot(rawFleeVec.x, rawFleeVec.z) || 1;
+      const fleeDist = params.distance || 10;
+      const normX = rawFleeVec.x / horizontalDist;
+      const normZ = rawFleeVec.z / horizontalDist;
+
+      // Primary flee destination directly opposite threat, plus angled candidate escape paths (+60°, -60°)
+      const angles = [0, Math.PI / 3, -Math.PI / 3];
+      const candidateDests: Vec3[] = angles.map((angle) => {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const rx = normX * cos - normZ * sin;
+        const rz = normX * sin + normZ * cos;
+        return new Vec3(botPos.x + rx * fleeDist, botPos.y, botPos.z + rz * fleeDist);
+      }).filter((dest) => {
+        if (!bot.blockAt) return true;
+        const b = bot.blockAt(dest);
+        const bg = bot.blockAt(dest.offset(0, -1, 0));
+        const isWater = b?.name === 'water' || b?.name === 'flowing_water' || bg?.name === 'water' || bg?.name === 'flowing_water';
+        return !isWater;
+      });
+
+      let onAbort: (() => void) | null = null;
+      if (ctx.abortSignal) {
+        onAbort = () => {
+          try {
+            (bot as any).pathfinder?.stop();
+            (bot as any).pathfinder?.setGoal(null);
+          } catch {}
+          bot.clearControlStates();
+        };
+        ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+      }
 
       try {
+        updatePathfinderMovements(bot);
         bot.setControlState('sprint', true);
-        const goal = new goals.GoalNear(destination.x, destination.y, destination.z, 2);
-        await (bot as any).pathfinder.goto(goal);
-        bot.setControlState('sprint', false);
-        return { status: 'success', reason: `Fled from threat to safe distance.` };
-      } catch (err: any) {
-        bot.setControlState('sprint', false);
-        return { status: 'failed', reason: `Flee path obstructed: ${err.message}` };
+
+        for (let i = 0; i < candidateDests.length; i++) {
+          if (ctx.abortSignal?.aborted || !isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Flee cancelled by preemption signal.' };
+          }
+          const destination = candidateDests[i];
+          try {
+            // Use GoalNearXZ so natural terrain slopes/elevation changes do not cause 50ms altitude lockout
+            const goal = new goals.GoalNearXZ(destination.x, destination.z, 2);
+            await (bot as any).pathfinder.goto(goal);
+            return {
+              status: 'success',
+              reason: i === 0 ? 'Fled from threat to safe distance.' : 'Fled from threat via angled escape trajectory.',
+            };
+          } catch (err: any) {
+            if (ctx.abortSignal?.aborted || !isActionContextActive(ctx)) {
+              return { status: 'interrupted', reason: 'Flee cancelled by preemption signal.' };
+            }
+            ctx.logger?.debug?.(`Flee trajectory ${i} blocked (${err.message}). Trying alternate angle...`);
+          }
+        }
+        return { status: 'failed', reason: 'All flee escape paths obstructed around current position.' };
+      } finally {
+        if (ctx.abortSignal && onAbort) {
+          ctx.abortSignal.removeEventListener('abort', onAbort);
+        }
+        if (isActionContextActive(ctx)) {
+          try {
+            (bot as any).pathfinder?.stop();
+          } catch {}
+          bot.clearControlStates();
+        }
       }
     },
   },
@@ -193,14 +300,33 @@ export const movementActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.vitals.movementState.isSleeping && !obs.container.isOpen,
     getAvailableChoices: () => ({ direction: ['forward', 'back', 'left', 'right'] }),
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (ctx.abortSignal?.aborted) {
+        return { status: 'interrupted', reason: 'Move cancelled before start.' };
+      }
       const dir = params.direction || 'forward';
       const duration = Math.min(Math.max(params.durationMs || 800, 200), 2500);
 
-      bot.setControlState(dir, true);
-      await new Promise((res) => setTimeout(res, duration));
-      bot.setControlState(dir, false);
-      return { status: 'success', reason: `Moved ${dir} for ${duration}ms.` };
+      try {
+        bot.setControlState(dir, true);
+        const interval = 50;
+        const loops = Math.ceil(duration / interval);
+        for (let i = 0; i < loops; i++) {
+          if (ctx.abortSignal?.aborted) {
+            return { status: 'interrupted', reason: 'Move cancelled by preemption signal.' };
+          }
+          if (Boolean((bot.entity as any)?.isInWater)) {
+            return { status: 'failed', reason: 'Move halted: entered water hazard.' };
+          }
+          await new Promise((res) => setTimeout(res, interval));
+        }
+        return { status: 'success', reason: `Moved ${dir} for ${duration}ms.` };
+      } finally {
+        if (isActionContextActive(ctx)) {
+          bot.setControlState(dir, false);
+          bot.clearControlStates();
+        }
+      }
     },
   },
   {
@@ -223,6 +349,10 @@ export const movementActions: ActionDef[] = [
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.movementState.inWater,
     execute: async (bot: Bot): Promise<ActionResult> => {
+      const inWater = Boolean((bot.entity as any)?.isInWater);
+      if (!inWater) {
+        return { status: 'failed', reason: 'Cannot swim up: bot is not in water.' };
+      }
       bot.setControlState('jump', true);
       await new Promise((res) => setTimeout(res, 1200));
       bot.setControlState('jump', false);
@@ -286,30 +416,187 @@ export const movementActions: ActionDef[] = [
   {
     name: 'explore',
     category: 'movement',
-    description: 'Walk in a chosen cardinal direction to explore terrain.',
+    description: 'Goal-directed exploration: searches for a specific target resource/feature (e.g. wood, stone, coal, iron, animal, shelter) or scans terrain in safe direction.',
     parameterSchema: {
-      direction: { type: 'string', enum: ['north', 'south', 'east', 'west'] },
-      distance: { type: 'number', description: 'Blocks to explore forward (default 12)' },
+      target: { type: 'string', description: 'Resource or feature to search for (e.g. wood, stone, coal, iron, animal, water, shelter)' },
+      direction: { type: 'string', enum: ['north', 'south', 'east', 'west'], description: 'Optional direction preference' },
+      distance: { type: 'number', description: 'Blocks to explore forward (default 16)' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
-    getAvailableChoices: () => ({ direction: ['north', 'south', 'east', 'west'] }),
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      const dir = params.direction || 'north';
-      const dist = Math.min(params.distance || 12, 20);
+    getAvailableChoices: () => ({
+      direction: ['north', 'south', 'east', 'west'],
+      target: ['wood', 'stone', 'coal', 'iron', 'animal', 'shelter', 'water'],
+    }),
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (ctx.abortSignal?.aborted) {
+        return { status: 'interrupted', reason: 'Explore cancelled before start.' };
+      }
 
-      const botPos = bot.entity.position;
-      let target = botPos.clone();
-      if (dir === 'north') target = target.offset(0, 0, -dist);
-      else if (dir === 'south') target = target.offset(0, 0, dist);
-      else if (dir === 'east') target = target.offset(dist, 0, 0);
-      else if (dir === 'west') target = target.offset(-dist, 0, 0);
+      const target = params.target?.toLowerCase();
+      const dist = Math.min(params.distance || 16, 24);
+
+      // 1. If target is specified, check if it's ALREADY visible nearby
+      if (target) {
+        if (target === 'wood' || target === 'log' || target === 'tree') {
+          const tree = bot.findBlock ? bot.findBlock({ matching: (b) => b.name.includes('_log'), maxDistance: 48 }) : null;
+          if (tree) {
+            return {
+              status: 'success',
+              reason: `Discovered tree at (${tree.position.x}, ${tree.position.y}, ${tree.position.z})! Use chop_tree or collect_resource to gather wood.`,
+            };
+          }
+        } else if (target === 'stone' || target === 'cobblestone') {
+          const stone = bot.findBlock ? bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'stone'), maxDistance: 48 }) : null;
+          if (stone) {
+            return {
+              status: 'success',
+              reason: `Discovered stone at (${stone.position.x}, ${stone.position.y}, ${stone.position.z})! Use collect_resource to mine cobblestone.`,
+            };
+          }
+        } else if (target === 'coal') {
+          const coal = bot.findBlock ? bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'coal'), maxDistance: 48 }) : null;
+          if (coal) {
+            return {
+              status: 'success',
+              reason: `Discovered coal ore at (${coal.position.x}, ${coal.position.y}, ${coal.position.z})! Ready to mine.`,
+            };
+          }
+        } else if (target === 'iron') {
+          const iron = bot.findBlock ? bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'iron'), maxDistance: 48 }) : null;
+          if (iron) {
+            return {
+              status: 'success',
+              reason: `Discovered iron ore at (${iron.position.x}, ${iron.position.y}, ${iron.position.z})! Ready to mine.`,
+            };
+          }
+        } else if (target === 'animal' || target === 'food') {
+          const foodMob = Object.values(bot.entities || {}).find(
+            (e) => e && ['cow', 'sheep', 'pig', 'chicken'].includes(e.name || '')
+          );
+          if (foodMob) {
+            return {
+              status: 'success',
+              reason: `Discovered ${foodMob.name} nearby at (${foodMob.position.x.toFixed(0)}, ${foodMob.position.y.toFixed(0)}, ${foodMob.position.z.toFixed(0)})!`,
+            };
+          }
+        }
+      }
+
+      // 2. Select directions to try
+      const allDirs = ['north', 'east', 'south', 'west'];
+      let candidateDirs: string[];
+      if (params.direction && allDirs.includes(params.direction)) {
+        candidateDirs = [params.direction, ...allDirs.filter((d) => d !== params.direction)];
+      } else {
+        const yaw = bot.entity?.yaw ?? 0;
+        let normYaw = yaw % (2 * Math.PI);
+        if (normYaw < 0) normYaw += 2 * Math.PI;
+        const deg = (normYaw * 180) / Math.PI;
+        let facingDir = 'north';
+        if (deg >= 45 && deg < 135) facingDir = 'west';
+        else if (deg >= 135 && deg < 225) facingDir = 'south';
+        else if (deg >= 225 && deg < 315) facingDir = 'east';
+        candidateDirs = [facingDir, ...allDirs.filter((d) => d !== facingDir)];
+      }
+
+      let onAbort: (() => void) | null = null;
+      if (ctx.abortSignal) {
+        onAbort = () => {
+          try {
+            (bot as any).pathfinder?.stop();
+            (bot as any).pathfinder?.setGoal(null);
+          } catch {}
+          bot.clearControlStates();
+        };
+        ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+      }
 
       try {
-        const goal = new goals.GoalNear(target.x, target.y, target.z, 2);
-        await (bot as any).pathfinder.goto(goal);
-        return { status: 'success', reason: `Explored ${dist} blocks ${dir}.` };
-      } catch (err: any) {
-        return { status: 'failed', reason: `Exploration path blocked: ${err.message}` };
+        updatePathfinderMovements(bot);
+
+        for (const currentDir of candidateDirs) {
+          if (ctx.abortSignal?.aborted || !isActionContextActive(ctx)) {
+            return { status: 'interrupted', reason: 'Explore cancelled by preemption signal.' };
+          }
+
+          const botPos = bot.entity.position;
+          let targetPos = botPos.clone();
+          if (currentDir === 'north') targetPos = targetPos.offset(0, 0, -dist);
+          else if (currentDir === 'south') targetPos = targetPos.offset(0, 0, dist);
+          else if (currentDir === 'east') targetPos = targetPos.offset(dist, 0, 0);
+          else if (currentDir === 'west') targetPos = targetPos.offset(-dist, 0, 0);
+
+          // Candidate evaluation using fresh observations, blacklist, and hazards
+          const assessment = evaluateCandidateTarget(bot, targetPos, { intent: 'horizontal', allowWater: false });
+          if (!assessment.valid) {
+            console.log(`[EXPLORE] Direction ${currentDir} skipped: ${assessment.rejectionReason}`);
+            ctx.logger?.debug?.(`Explore direction ${currentDir} skipped: ${assessment.rejectionReason}`);
+            continue;
+          }
+
+          console.log(`[EXPLORE] Exploring ${currentDir} towards (${targetPos.x.toFixed(1)}, ${targetPos.z.toFixed(1)}) [${dist}m]...`);
+          const navResult = await navigateWithBounds(
+            bot,
+            {
+              target: targetPos,
+              range: 3,
+              intent: 'horizontal',
+            },
+            ctx
+          );
+
+          if (navResult.status === 'cancelled') {
+            return { status: 'interrupted', reason: 'Explore cancelled by preemption signal.' };
+          }
+
+          if (navResult.success) {
+            // Scan what was discovered in the new area
+            const discovered: string[] = [];
+            if (bot.findBlock) {
+              const nearbyTrees = bot.findBlock({ matching: (b) => b.name.includes('_log'), maxDistance: 32 });
+              if (nearbyTrees) discovered.push('trees');
+              const nearbyStone = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'stone'), maxDistance: 32 });
+              if (nearbyStone) discovered.push('stone');
+              const nearbyCoal = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'coal'), maxDistance: 32 });
+              if (nearbyCoal) discovered.push('coal ore');
+              const nearbyIron = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'iron'), maxDistance: 32 });
+              if (nearbyIron) discovered.push('iron ore');
+            }
+
+            const sightedMobs = Object.values(bot.entities || {})
+              .filter((e) => e && ['cow', 'sheep', 'pig', 'chicken'].includes(e.name || ''))
+              .map((e) => e.name);
+            if (sightedMobs.length > 0) {
+              discovered.push(`${Array.from(new Set(sightedMobs)).join('/')}`);
+            }
+
+            console.log(`[EXPLORE] Exploration ${currentDir} succeeded! Discovered: ${discovered.join(', ') || 'clear terrain'}.`);
+
+            const rerouteNote =
+              params.direction && currentDir !== params.direction
+                ? ` (rerouted around blocked ${params.direction})`
+                : '';
+            const discoveryText = discovered.length > 0 ? ` Sighted nearby: ${discovered.join(', ')}.` : '';
+            return {
+              status: 'success',
+              reason: `Explored ${dist} blocks ${currentDir}${rerouteNote}.${discoveryText}`,
+            };
+          } else {
+            ctx.logger?.debug?.(`Explore direction ${currentDir} blocked (${navResult.reason}). Trying next direction...`);
+          }
+        }
+
+        return { status: 'failed', reason: 'All exploration directions blocked around current position.' };
+      } finally {
+        if (ctx.abortSignal && onAbort) {
+          ctx.abortSignal.removeEventListener('abort', onAbort);
+        }
+        if (isActionContextActive(ctx)) {
+          try {
+            (bot as any).pathfinder?.stop();
+          } catch {}
+          bot.clearControlStates();
+        }
       }
     },
   },
@@ -336,7 +623,7 @@ export const movementActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniquePillarUp(bot, params.height || 3, ctx.abortSignal);
+      return techniquePillarUp(bot, params.height || 3, ctx.abortSignal, ctx.isCurrent);
     },
   },
   {
@@ -350,7 +637,7 @@ export const movementActions: ActionDef[] = [
     isAvailable: (bot, obs) => obs.vitals.isAlive && Object.keys(obs.inventory.placeableBlocks).length > 0,
     getAvailableChoices: () => ({ direction: ['forward', 'north', 'south', 'east', 'west'] }),
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      return techniqueBridge(bot, params.direction || 'forward', params.distance || 4, ctx.abortSignal);
+      return techniqueBridge(bot, params.direction || 'forward', params.distance || 4, ctx.abortSignal, ctx.isCurrent);
     },
   },
 ];

@@ -3,6 +3,7 @@ import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.
 import { distance3D } from '../utils/math.js';
 import { goals } from 'mineflayer-pathfinder';
 import { resolveAndValidateTarget } from '../safety/index.js';
+import { isActionContextActive } from '../agent/arbiter.js';
 
 export const combatActions: ActionDef[] = [
   {
@@ -29,14 +30,25 @@ export const combatActions: ActionDef[] = [
         bot.inventory?.items().find((i) => i.name.endsWith('_sword')) ||
         bot.inventory?.items().find((i) => i.name.endsWith('_axe'));
       if (bestWeapon && bot.heldItem?.type !== bestWeapon.type) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Attack cancelled before weapon equip.' };
+        }
         try {
           await bot.equip(bestWeapon, 'hand');
         } catch {}
       }
 
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Attack cancelled before approach.' };
+      }
+
       // Approach if farther than 3 blocks
       const dist = distance3D(bot.entity.position, rawEntity.position);
+      console.log(`[COMBAT] Approaching and attacking ${targetObs.name} (dist: ${dist.toFixed(1)}m, weapon: ${bestWeapon?.name || 'hand'})...`);
       if (dist > 3.0) {
+        if (Boolean((rawEntity as any).isInWater) && !Boolean((bot.entity as any)?.isInWater)) {
+          return { status: 'failed', reason: 'Target is in water; halting melee approach to avoid entering water hazard.' };
+        }
         try {
           const goal = new goals.GoalFollow(rawEntity, 2.5);
           (bot as any).pathfinder?.setGoal(goal, true);
@@ -45,11 +57,21 @@ export const combatActions: ActionDef[] = [
         } catch {}
       }
 
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Attack cancelled before strike.' };
+      }
+
       try {
         await bot.lookAt(rawEntity.position.offset(0, rawEntity.height ? rawEntity.height / 2 : 1, 0), true);
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Attack cancelled before strike.' };
+        }
         bot.attack(rawEntity);
         return { status: 'success', reason: `Attacked ${targetObs.name} (${targetObs.type}).` };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Attack cancelled.' };
+        }
         return { status: 'failed', reason: `Attack failed: ${err.message}` };
       }
     },
@@ -75,16 +97,57 @@ export const combatActions: ActionDef[] = [
       durationMs: { type: 'number', description: 'Duration in ms (default 1500)' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && obs.inventory.toolSummary.hasShield,
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
-      const duration = Math.min(params.durationMs || 1500, 4000);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (ctx.abortSignal?.aborted) {
+        return { status: 'interrupted', reason: 'Shield block cancelled before start.' };
+      }
+
+      const shield = bot.inventory?.items().find((i) => i.name === 'shield');
+      if (!shield) {
+        return { status: 'failed', reason: 'No shield found in inventory to block with.' };
+      }
+
       try {
-        bot.activateItem(true); // off-hand shield
-        await new Promise((res) => setTimeout(res, duration));
-        bot.deactivateItem();
+        await bot.equip(shield, 'off-hand');
+      } catch (err: any) {
+        return { status: 'failed', reason: `Failed equipping shield to off-hand: ${err.message}` };
+      }
+
+      const duration = Math.min(Math.max(params.durationMs || 1500, 100), 5000);
+      let onAbort: (() => void) | null = null;
+      try {
+        bot.activateItem(true); // raise off-hand shield
+        if (ctx.abortSignal) {
+          onAbort = () => {
+            try { bot.deactivateItem(); } catch {}
+          };
+          ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        const interval = 50;
+        const loops = Math.ceil(duration / interval);
+        for (let i = 0; i < loops; i++) {
+          if (ctx.abortSignal?.aborted) {
+            return { status: 'interrupted', reason: 'Shield block interrupted by preemption signal.' };
+          }
+          await new Promise((res) => setTimeout(res, interval));
+        }
+
         return { status: 'success', reason: `Shield raised for ${duration}ms.` };
       } catch (err: any) {
-        bot.deactivateItem();
+        if (ctx.abortSignal?.aborted) {
+          return { status: 'interrupted', reason: 'Shield block interrupted by preemption signal.' };
+        }
         return { status: 'failed', reason: `Shield block failed: ${err.message}` };
+      } finally {
+        if (ctx.abortSignal && onAbort) {
+          ctx.abortSignal.removeEventListener('abort', onAbort);
+        }
+        if (isActionContextActive(ctx)) {
+          try {
+            bot.deactivateItem();
+          } catch {}
+        }
       }
     },
   },
@@ -110,16 +173,60 @@ export const combatActions: ActionDef[] = [
       const bowItem = bot.inventory?.items().find((i) => i.name === 'bow' || i.name === 'crossbow');
       if (!bowItem) return { status: 'failed', reason: 'No bow or crossbow in inventory.' };
 
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Shoot cancelled before weapon equip.' };
+      }
+
+      let onAbort: (() => void) | null = null;
       try {
         await bot.equip(bowItem, 'hand');
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Shoot cancelled before aiming.' };
+        }
+
         await bot.lookAt(rawEntity.position.offset(0, rawEntity.height ? rawEntity.height * 0.8 : 1.2, 0), true);
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Shoot cancelled before draw.' };
+        }
+
         bot.activateItem();
-        await new Promise((res) => setTimeout(res, 1200)); // Charge bow
+
+        if (ctx.abortSignal) {
+          onAbort = () => {
+            try { bot.deactivateItem(); } catch {}
+          };
+          ctx.abortSignal.addEventListener('abort', onAbort, { once: true });
+        }
+
+        const chargeInterval = 50;
+        const chargeLoops = 24; // ~1200ms
+        for (let i = 0; i < chargeLoops; i++) {
+          if (!isActionContextActive(ctx)) {
+            try { bot.deactivateItem(); } catch {}
+            return { status: 'interrupted', reason: 'Bow charge interrupted by cancellation.' };
+          }
+          await new Promise((res) => setTimeout(res, chargeInterval));
+        }
+
+        if (!isActionContextActive(ctx)) {
+          try { bot.deactivateItem(); } catch {}
+          return { status: 'interrupted', reason: 'Bow charge interrupted by cancellation.' };
+        }
+
         bot.deactivateItem();
         return { status: 'success', reason: `Shot arrow at ${targetObs.name}.` };
       } catch (err: any) {
-        bot.deactivateItem();
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Bow charge interrupted by cancellation.' };
+        }
         return { status: 'failed', reason: `Shoot failed: ${err.message}` };
+      } finally {
+        if (ctx.abortSignal && onAbort) {
+          ctx.abortSignal.removeEventListener('abort', onAbort);
+        }
+        if (isActionContextActive(ctx)) {
+          try { bot.deactivateItem(); } catch {}
+        }
       }
     },
   },

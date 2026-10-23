@@ -1,5 +1,6 @@
 import { Bot } from 'mineflayer';
 import { ActionDef, ActionExecutionContext, ActionResult } from '../types/index.js';
+import { isActionContextActive } from '../agent/arbiter.js';
 
 export const worldInteractionActions: ActionDef[] = [
   {
@@ -10,7 +11,10 @@ export const worldInteractionActions: ActionDef[] = [
       blockType: { type: 'string', description: 'Block name or notable block' },
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.container.isOpen,
-    execute: async (bot: Bot, params: any): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Interact block cancelled before start.' };
+      }
       const block = bot.findBlock({
         matching: (b) => ['door', 'gate', 'button', 'lever', 'trapdoor', 'crafting_table'].some((k) => b.name.includes(k)),
         maxDistance: 4.5,
@@ -19,9 +23,15 @@ export const worldInteractionActions: ActionDef[] = [
       if (!block) return { status: 'failed', reason: 'No interactable block in reach.' };
 
       try {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Interact block cancelled.' };
+        }
         await bot.activateBlock(block);
         return { status: 'success', reason: `Interacted with ${block.name}.` };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Interact block cancelled.' };
+        }
         return { status: 'failed', reason: `Interaction failed: ${err.message}` };
       }
     },
@@ -35,6 +45,9 @@ export const worldInteractionActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && obs.entities.length > 0,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Interact entity cancelled before start.' };
+      }
       const entObs = ctx.observation.entities.find((e) => e.id === params.targetId);
       if (!entObs) return { status: 'failed', reason: 'Entity not found.' };
 
@@ -42,9 +55,15 @@ export const worldInteractionActions: ActionDef[] = [
       if (!rawEntity || (rawEntity as any).isValid === false) return { status: 'failed', reason: 'Entity no longer available or alive.' };
 
       try {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Interact entity cancelled.' };
+        }
         await bot.activateEntity(rawEntity);
         return { status: 'success', reason: `Interacted with ${entObs.name}.` };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Interact entity cancelled.' };
+        }
         return { status: 'failed', reason: `Entity interaction failed: ${err.message}` };
       }
     },
@@ -63,14 +82,23 @@ export const worldInteractionActions: ActionDef[] = [
         obs.blocks?.notableBlocks?.some((b) => b.name.includes('bed'))
       );
     },
-    execute: async (bot: Bot): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Sleep cancelled before start.' };
+      }
       const bed = bot.findBlock({ matching: (b) => b.name.includes('bed'), maxDistance: 4.5 });
       if (!bed) return { status: 'failed', reason: 'No bed in reach.' };
 
       try {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Sleep cancelled.' };
+        }
         await bot.sleep(bed);
         return { status: 'success', reason: 'Sleeping in bed.' };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Sleep cancelled.' };
+        }
         return { status: 'failed', reason: `Cannot sleep: ${err.message}` };
       }
     },
@@ -81,11 +109,17 @@ export const worldInteractionActions: ActionDef[] = [
     description: 'Wake up from bed.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.movementState.isSleeping,
-    execute: async (bot: Bot): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Wake cancelled before start.' };
+      }
       try {
         await bot.wake();
         return { status: 'success', reason: 'Woke up from bed.' };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Wake cancelled.' };
+        }
         return { status: 'failed', reason: `Failed to wake: ${err.message}` };
       }
     },
@@ -99,15 +133,24 @@ export const worldInteractionActions: ActionDef[] = [
     },
     isAvailable: (bot, obs) => obs.vitals.isAlive && !obs.vitals.movementState.isRiding,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Mount cancelled before start.' };
+      }
       const entObs = ctx.observation.entities.find((e) => ['boat', 'horse', 'minecart', 'donkey'].includes(e.type));
       if (!entObs) return { status: 'failed', reason: 'No rideable entity nearby.' };
       const raw = bot.entities[entObs.rawId];
       if (!raw) return { status: 'failed', reason: 'Rideable entity not available.' };
 
       try {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Mount cancelled.' };
+        }
         await bot.mount(raw);
         return { status: 'success', reason: `Mounted ${entObs.name}.` };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Mount cancelled.' };
+        }
         return { status: 'failed', reason: `Mount failed: ${err.message}` };
       }
     },
@@ -118,11 +161,21 @@ export const worldInteractionActions: ActionDef[] = [
     description: 'Dismount from the vehicle currently riding.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.movementState.isRiding,
-    execute: async (bot: Bot): Promise<ActionResult> => {
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      if (!isActionContextActive(ctx)) {
+        return { status: 'interrupted', reason: 'Dismount cancelled before start.' };
+      }
+      const isRiding = Boolean((bot as any).vehicle || (bot.entity as any)?.vehicle);
+      if (!isRiding) {
+        return { status: 'failed', reason: 'Cannot dismount: bot is not riding any vehicle.' };
+      }
       try {
         await bot.dismount();
         return { status: 'success', reason: 'Dismounted from vehicle.' };
       } catch (err: any) {
+        if (!isActionContextActive(ctx)) {
+          return { status: 'interrupted', reason: 'Dismount cancelled.' };
+        }
         return { status: 'failed', reason: `Dismount failed: ${err.message}` };
       }
     },
