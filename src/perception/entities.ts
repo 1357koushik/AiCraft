@@ -18,7 +18,7 @@ const PASSIVE_ANIMALS = new Set([
   'parrot', 'llama', 'turtle', 'axolotl', 'frog', 'sniffer', 'camel', 'armadillo',
 ]);
 
-export function extractEntities(bot: Bot, config: AppConfig): EntityInfo[] {
+export function extractEntities(bot: Bot, config: AppConfig, idMap?: Map<number, string>): EntityInfo[] {
   if (!bot.entity) return [];
   const botPos = bot.entity.position;
   const maxRadius = config.perception.entityRadius || 20;
@@ -33,9 +33,14 @@ export function extractEntities(bot: Bot, config: AppConfig): EntityInfo[] {
   rawEntities.sort((a, b) => distance3D(botPos, a.position) - distance3D(botPos, b.position));
 
   const result: EntityInfo[] = [];
-  let counter = 1;
+  let next = idMap ? idMap.size + 1 : 1;
 
   for (const ent of rawEntities) {
+    let id = idMap?.get(ent.id);
+    if (!id) {
+      id = `e${next++}`;
+      idMap?.set(ent.id, id);
+    }
     const rawType = ent.name || ent.type || 'unknown';
     const isPlayer = ent.type === 'player';
     const username = ent.username || rawType;
@@ -65,7 +70,7 @@ export function extractEntities(bot: Bot, config: AppConfig): EntityInfo[] {
     const healthObserved = (ent as any).health !== undefined ? Math.round((ent as any).health) : 'unknown';
 
     result.push({
-      id: `e${counter++}`,
+      id,
       rawId: ent.id,
       type: rawType,
       name: isItem ? itemName : (isPlayer ? username : rawType),

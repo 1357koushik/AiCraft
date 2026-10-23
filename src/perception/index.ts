@@ -26,7 +26,8 @@ export function buildObservation(
   agentState: AgentInternalState,
   memory: MemoryNotes,
   recentEvents: RecentEventsState,
-  availableActions: AvailableActionCatalogItem[]
+  availableActions: AvailableActionCatalogItem[],
+  entityIdMap?: Map<number, string>
 ): Observation {
   const entity = bot.entity;
   const pos = entity ? entity.position : new Vec3(0, 64, 0);
@@ -173,7 +174,7 @@ export function buildObservation(
     inventory: extractInventory(bot, config.agent.handedness),
     crosshair,
     blocks: extractBlocks(bot, config),
-    entities: extractEntities(bot, config),
+    entities: extractEntities(bot, config, entityIdMap),
     recentEvents,
     container: containerState,
     agentState,
@@ -183,3 +184,5 @@ export function buildObservation(
     },
   };
 }
+
+export * from './world_state.js';
