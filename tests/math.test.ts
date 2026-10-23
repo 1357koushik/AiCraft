@@ -3,13 +3,13 @@ import { getFacing, distance3D, manhattanDistance, isWithinBounds } from '../src
 
 describe('Math and Geometry Utilities', () => {
   it('correctly maps yaw to cardinal facing directions', () => {
-    // 0 rad = south
-    expect(getFacing(0)).toBe('south');
-    // Math.PI / 2 = west
+    // 0 rad = north in Mineflayer (-Z)
+    expect(getFacing(0)).toBe('north');
+    // Math.PI / 2 = west (-X)
     expect(getFacing(Math.PI / 2)).toBe('west');
-    // Math.PI = north
-    expect(getFacing(Math.PI)).toBe('north');
-    // -Math.PI / 2 or 3 * Math.PI / 2 = east
+    // Math.PI = south (+Z)
+    expect(getFacing(Math.PI)).toBe('south');
+    // -Math.PI / 2 or 3 * Math.PI / 2 = east (+X)
     expect(getFacing(-Math.PI / 2)).toBe('east');
   });
 

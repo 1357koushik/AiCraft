@@ -145,4 +145,93 @@ describe('LLM JSON Parser and Cleaner', () => {
     expect(parsed.data?.memory?.dangerZone?.radius).toBe(15);
     expect(parsed.data?.say).toBe('Home established!');
   });
+
+  it('rejects ambiguous responses with multiple conflicting JSON decisions', () => {
+    const raw = `
+    Here is plan A:
+    {
+      "decision_summary": "Mine stone",
+      "goal": "Get stone",
+      "actions": [{"action": "mine_staircase", "params": {"steps": 3}}]
+    }
+    Or alternatively plan B:
+    {
+      "decision_summary": "Chop trees",
+      "goal": "Get wood",
+      "actions": [{"action": "chop_tree", "params": {"logType": "oak_log"}}]
+    }
+    `;
+    const parsed = parseAndValidateLLMResponse(raw);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error).toContain('Ambiguous response: multiple conflicting valid JSON decisions found');
+  });
+
+  it('rejects action parameters containing NaN, Infinity, negative values or unexpected fields', () => {
+    // Negative distance
+    const negativeDist = JSON.stringify({
+      decision_summary: "Move forward",
+      goal: "Travel",
+      actions: [{ action: "goto", params: { x: 10, y: 64, z: 10, range: -5 } }]
+    });
+    const parsed1 = parseAndValidateLLMResponse(negativeDist);
+    expect(parsed1.success).toBe(false);
+    expect(parsed1.error).toContain('greater than 0');
+
+    // Unexpected parameter
+    const unexpectedParam = JSON.stringify({
+      decision_summary: "Wait a moment",
+      goal: "Rest",
+      actions: [{ action: "wait", params: { seconds: 1, unauthorizedKey: "hack" } }]
+    });
+    const parsed2 = parseAndValidateLLMResponse(unexpectedParam);
+    expect(parsed2.success).toBe(false);
+    expect(parsed2.error).toContain('Unexpected parameter');
+  });
+
+  it('correctly normalizes prompt catalog metadata and root-level parameters', () => {
+    const raw = JSON.stringify({
+      decision_summary: "Exploring surroundings",
+      goal: "Find shelter",
+      actions: [
+        {
+          action: "explore",
+          direction: "north",
+          category: "movement",
+          desc: "Explore terrain in a cardinal direction"
+        }
+      ]
+    });
+    const parsed = parseAndValidateLLMResponse(raw);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.actions[0].action).toBe('explore');
+    expect(parsed.data?.actions[0].params.direction).toBe('north');
+  });
+
+  it('correctly normalizes common action name aliases like mine_block, gather_stone, and say', () => {
+    const raw = JSON.stringify({
+      decision_summary: "Mining and speaking",
+      goal: "Get resources",
+      actions: [
+        {
+          action: "mine_block",
+          blockType: "oak_log",
+          category: "mining"
+        }
+      ]
+    });
+    const parsed = parseAndValidateLLMResponse(raw);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.actions[0].action).toBe('mine_resource');
+    expect(parsed.data?.actions[0].params.blockType).toBe('oak_log');
+
+    const rawStone = JSON.stringify({
+      decision_summary: "Mining stone",
+      goal: "Get cobblestone",
+      actions: [{ action: "gather_stone", params: {} }]
+    });
+    const parsedStone = parseAndValidateLLMResponse(rawStone);
+    expect(parsedStone.success).toBe(true);
+    expect(parsedStone.data?.actions[0].action).toBe('collect_resource');
+    expect(parsedStone.data?.actions[0].params.resource).toBe('stone');
+  });
 });

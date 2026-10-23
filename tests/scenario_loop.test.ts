@@ -6,6 +6,7 @@ import { MemoryManager } from '../src/memory/index.js';
 import { SafetyManager } from '../src/safety/index.js';
 import { MockLLMProvider } from '../src/llm/mock.js';
 import { AgentController } from '../src/agent/loop.js';
+import { ActionPriority } from '../src/agent/arbiter.js';
 
 describe('Agent Controller & Scenario Execution', () => {
   it('executes a scenario with MockLLMProvider and updates memory', async () => {
@@ -265,5 +266,185 @@ describe('Agent Controller & Scenario Execution', () => {
     await (controller as any).step();
 
     expect(mockBot.chat).not.toHaveBeenCalled();
+  });
+
+  it('preempts active actions and cleans controls on bot end/disconnect event', () => {
+    const config = loadConfig();
+    config.logging.level = 'error';
+    const logger = new AgentLogger(config);
+    const memory = new MemoryManager(`disconnect_test_${Date.now()}`, './data/test_memory');
+    const safety = new SafetyManager(config);
+
+    let endCallback: (() => void) | null = null;
+    const mockBot: any = {
+      username: 'AIAgentBot',
+      health: 20,
+      food: 20,
+      isAlive: true,
+      entity: { position: new Vec3(0, 64, 0), onGround: true },
+      entities: {},
+      inventory: { items: () => [], slots: new Array(46).fill(null), emptySlotCount: () => 36 },
+      clearControlStates: vi.fn(),
+      deactivateItem: vi.fn(),
+      pathfinder: { stop: vi.fn(), setGoal: vi.fn() },
+      on: vi.fn().mockImplementation((event: string, cb: any) => {
+        if (event === 'end') endCallback = cb;
+      }),
+      once: vi.fn(),
+    };
+
+    const mockProvider = new MockLLMProvider([]);
+    const controller = new AgentController(mockBot, config, logger, memory, safety, mockProvider);
+
+    // Start a dummy normal action
+    const arbiter = (controller as any).arbiter;
+    const action = arbiter.startAction('goto', ActionPriority.NORMAL, mockBot);
+    expect(arbiter.isBusy()).toBe(true);
+
+    // Simulate server disconnect
+    expect(endCallback).not.toBeNull();
+    endCallback!();
+
+    expect(action.signal.aborted).toBe(true);
+    expect(arbiter.isBusy()).toBe(false);
+    expect(mockBot.clearControlStates).toHaveBeenCalled();
+  });
+
+  it('records items picked up by bot into recentEvents.itemsPickedUp when playerCollect fires for bot', () => {
+    const config = loadConfig();
+    config.logging.level = 'error';
+    const logger = new AgentLogger(config);
+    const memory = new MemoryManager(`collect_test_${Date.now()}`, './data/test_memory');
+    const safety = new SafetyManager(config);
+
+    const eventCallbacks: Record<string, Function> = {};
+    const botEntity = { id: 1, position: new Vec3(0, 64, 0) };
+    const mockBot: any = {
+      username: 'AIAgentBot',
+      health: 20,
+      food: 20,
+      isAlive: true,
+      entity: botEntity,
+      entities: {},
+      inventory: { items: () => [], slots: new Array(46).fill(null), emptySlotCount: () => 36 },
+      clearControlStates: vi.fn(),
+      pathfinder: { stop: vi.fn() },
+      on: vi.fn().mockImplementation((event: string, cb: any) => {
+        eventCallbacks[event] = cb;
+      }),
+      once: vi.fn(),
+    };
+
+    const mockProvider = new MockLLMProvider([]);
+    const controller = new AgentController(mockBot, config, logger, memory, safety, mockProvider);
+
+    expect(eventCallbacks['playerCollect']).toBeDefined();
+
+    // 1. Bot collects 4 oak_logs
+    const mockItemEntity = {
+      id: 50,
+      name: 'item',
+      getDroppedItem: () => ({ name: 'oak_log', count: 4 }),
+    };
+    eventCallbacks['playerCollect'](botEntity, mockItemEntity);
+
+    const recentEvents = (controller as any).recentEvents;
+    expect(recentEvents.itemsPickedUp).toEqual([{ name: 'oak_log', count: 4 }]);
+
+    // 2. Another player collects cobblestone -> bot must ignore it
+    const otherPlayer = { id: 2, username: 'OtherPlayer' };
+    const otherItem = {
+      id: 51,
+      name: 'item',
+      getDroppedItem: () => ({ name: 'cobblestone', count: 8 }),
+    };
+    eventCallbacks['playerCollect'](otherPlayer, otherItem);
+
+    // recentEvents must not contain the other player's cobblestone
+    expect(recentEvents.itemsPickedUp).toEqual([{ name: 'oak_log', count: 4 }]);
+
+    // 3. Dropped item entity with unavailable metadata (e.g. null metadata or no getDroppedItem)
+    const corruptedDropEntity = { id: 52 }; // lacks getDroppedItem and name
+    eventCallbacks['playerCollect'](botEntity, corruptedDropEntity);
+    expect(recentEvents.itemsPickedUp).toContainEqual({ name: 'unknown_item', count: 1 });
+  });
+
+  it('strictly distinguishes verified bot kills from ambient/unrelated entity deaths and cleans listeners on disconnect', () => {
+    const config = loadConfig();
+    config.logging.level = 'error';
+    const logger = new AgentLogger(config);
+    const memory = new MemoryManager(`mob_dead_test_${Date.now()}`, './data/test_memory');
+    const safety = new SafetyManager(config);
+
+    const eventCallbacks: Record<string, Function> = {};
+    const botEntity = { id: 1, position: new Vec3(0, 64, 0) };
+    const mockBot: any = {
+      username: 'AIAgentBot',
+      health: 20,
+      food: 20,
+      isAlive: true,
+      entity: botEntity,
+      entities: {},
+      inventory: { items: () => [], slots: new Array(46).fill(null), emptySlotCount: () => 36 },
+      clearControlStates: vi.fn(),
+      pathfinder: { stop: vi.fn() },
+      attack: vi.fn(),
+      removeListener: vi.fn(),
+      removeAllListeners: vi.fn(),
+      on: vi.fn().mockImplementation((event: string, cb: any) => {
+        eventCallbacks[event] = cb;
+      }),
+      once: vi.fn(),
+    };
+
+    const mockProvider = new MockLLMProvider([]);
+    const controller = new AgentController(mockBot, config, logger, memory, safety, mockProvider);
+
+    expect(eventCallbacks['entityDead']).toBeDefined();
+
+    // 1. Ambient sheep dies 3 blocks away without bot attack (e.g. fire/fall/other player)
+    const ambientSheep = {
+      id: 200,
+      name: 'sheep',
+      type: 'mob',
+      position: new Vec3(3, 64, 0),
+    };
+    eventCallbacks['entityDead'](ambientSheep);
+
+    const recentEvents = (controller as any).recentEvents;
+    // Ambient death must NOT be recorded as a player kill
+    expect(recentEvents.mobsKilled).toEqual([]);
+    expect(recentEvents.nearbyEntityDeaths).toEqual(['sheep']);
+
+    // 2. Bot directly attacks a zombie
+    const targetZombie = {
+      id: 100,
+      name: 'zombie',
+      type: 'mob',
+      position: new Vec3(2, 64, 0),
+    };
+    mockBot.attack(targetZombie);
+
+    // Zombie dies after being attacked by bot -> verified bot kill
+    eventCallbacks['entityDead'](targetZombie);
+    expect(recentEvents.mobsKilled).toEqual(['zombie']);
+
+    // 3. Out-of-range death (40 blocks away) -> neither mobsKilled nor nearbyEntityDeaths
+    const farCow = {
+      id: 101,
+      name: 'cow',
+      type: 'mob',
+      position: new Vec3(40, 64, 0),
+    };
+    eventCallbacks['entityDead'](farCow);
+    expect(recentEvents.mobsKilled).toEqual(['zombie']);
+    expect(recentEvents.nearbyEntityDeaths).toEqual(['sheep']);
+
+    // 4. Verify listener cleanup on disconnect / instance update (removes only bound listeners, never calls removeAllListeners)
+    controller.cleanupEventListeners();
+    expect(mockBot.removeListener).toHaveBeenCalledWith('entityDead', expect.any(Function));
+    expect(mockBot.removeListener).toHaveBeenCalledWith('playerCollect', expect.any(Function));
+    expect(mockBot.removeListener).toHaveBeenCalledWith('end', expect.any(Function));
+    expect(mockBot.removeAllListeners).not.toHaveBeenCalled();
   });
 });

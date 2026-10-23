@@ -93,7 +93,7 @@ describe('Perception & Observation Builder', () => {
     expect(obs.vitals.health).toBe(16.5);
     expect(obs.vitals.food).toBe(18);
     expect(obs.position.blockCoords).toEqual({ x: 10, y: 64, z: -16 });
-    expect(obs.position.facing).toBe('south');
+    expect(obs.position.facing).toBe('north');
     expect(obs.environment.dayPhase).toBe('day');
     expect(obs.inventory.toolSummary.bestPickaxe).toBe('iron_pickaxe');
     expect(obs.inventory.foodList[0].name).toBe('bread');
