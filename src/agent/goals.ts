@@ -301,7 +301,7 @@ export class DeterministicGoalResolver {
           : spec.item === 'cobblestone' || spec.item === 'stone'
           ? { resource: 'stone', count: needed }
           : spec.item === 'oak_planks' || spec.item === 'stick'
-          ? { item: spec.item, count: Math.ceil(needed / 4) }
+          ? { item: spec.item, count: needed }
           : spec.item === 'crafting_table'
           ? { item: 'crafting_table', count: needed }
           : { resource: spec.item, count: needed };

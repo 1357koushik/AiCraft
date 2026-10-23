@@ -141,6 +141,39 @@ describe('Regression: Crafting-Count Correctness & Net Delta Verification', () =
     expect(planks?.count).toBe(12);
   });
 
+  it('craft_item action executes 3 batches for 12 requested planks and asserts net inventory delta (+12)', async () => {
+    const { bot, getInventory } = createMockBot([{ type: 10, name: 'oak_log', count: 4 }]);
+    const ctx = createMockCtx(bot);
+    const craftItemAction = inventoryCraftingActions.find((a) => a.name === 'craft_item')!;
+
+    const result = await craftItemAction.execute(bot, { item: 'oak_planks', count: 12 }, ctx);
+
+    expect(result.status).toBe('success');
+    expect(bot.craft).toHaveBeenCalledWith(expect.anything(), 3, undefined);
+    expect(result.details?.netIncrease).toBe(12);
+    expect(result.details?.batchesExecuted).toBe(3);
+    expect(result.details?.remainingNeeded).toBe(0);
+
+    const planks = getInventory().find((it) => it.name === 'oak_planks');
+    expect(planks?.count).toBe(12);
+    const logs = getInventory().find((it) => it.name === 'oak_log');
+    expect(logs?.count).toBe(1); // 4 - 3 = 1
+  });
+
+  it('accurately reports partial completion feasibility when input materials are insufficient', async () => {
+    const { bot } = createMockBot([{ type: 10, name: 'oak_log', count: 1 }]);
+    const ctx = createMockCtx(bot);
+    const executor = new ClosedLoopCraftingExecutor(bot);
+
+    const result = await executor.craftItem('oak_planks', 12, ctx);
+
+    expect(result.status).toBe('failed');
+    expect(result.details?.failureKind).toBe('INSUFFICIENT_MATERIALS');
+    expect(result.details?.requestedCount).toBe(12);
+    expect(result.details?.partialFeasibleCount).toBe(4); // 1 log can craft 4 planks
+    expect(result.details?.remainingNeeded).toBe(8);
+  });
+
   it('techniqueCraftPipeline accepts count parameter and verifies postcondition yield >= 12', async () => {
     const { bot, getInventory } = createMockBot([{ type: 10, name: 'oak_log', count: 4 }]);
 

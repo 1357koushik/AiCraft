@@ -398,10 +398,28 @@ export class ClosedLoopCraftingExecutor {
       const missingText = plan.missingIngredients
         .map((m: IngredientRequirement) => `${m.count}x ${m.itemName}`)
         .join(', ');
+
+      // Calculate any partial batches feasible from currently available materials
+      let partialFeasibleCount = 0;
+      for (let count = requestedCount - 1; count >= 1; count--) {
+        const subPlan = resolver.resolvePlan(targetItemName, count, options);
+        if (subPlan.feasible) {
+          partialFeasibleCount = count;
+          break;
+        }
+      }
+
       return {
         status: 'failed',
         reason: `Cannot craft ${requestedCount}x ${targetItemName}: missing required ingredients (${missingText || 'unresolved'}).`,
-        details: { plan, failureKind: 'INSUFFICIENT_MATERIALS' },
+        details: {
+          plan,
+          failureKind: 'INSUFFICIENT_MATERIALS',
+          requestedCount,
+          partialFeasibleCount,
+          remainingNeeded: requestedCount - partialFeasibleCount,
+          missingIngredients: plan.missingIngredients,
+        },
       };
     }
 
@@ -562,14 +580,26 @@ export class ClosedLoopCraftingExecutor {
         return {
           status: 'failed',
           reason: `Crafting postcondition failed: Expected at least ${requestedCount} ${targetItemName}, but net increase was ${netIncrease}.`,
-          details: { failureKind: 'POSTCONDITION_FAILED', requestedCount, netIncrease },
+          details: {
+            failureKind: 'POSTCONDITION_FAILED',
+            requestedCount,
+            netIncrease,
+            remainingNeeded: requestedCount - netIncrease,
+          },
         };
       }
 
       return {
         status: 'success',
         reason: `Successfully crafted ${netIncrease}x ${targetItemName} (requested ${requestedCount}).`,
-        details: { targetItemName, requestedCount, netIncrease, finalCount },
+        details: {
+          targetItemName,
+          requestedCount,
+          netIncrease,
+          finalCount,
+          batchesExecuted: plan.steps.reduce((sum, s) => sum + s.executionCount, 0),
+          remainingNeeded: Math.max(0, requestedCount - netIncrease),
+        },
       };
     } finally {
       if (ctx.abortSignal && onAbort) {
