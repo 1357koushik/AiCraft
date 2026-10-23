@@ -11,6 +11,9 @@ import {
 import { ActionExecutionContext, Observation } from '../src/types/index.js';
 
 describe('Navigation & Exploration Reliability Subsystem', () => {
+  beforeEach(() => {
+    navigationBlacklist.clear();
+  });
   const mockConfig: any = {
     perception: { scanRadius: 16 },
     safety: { protectedEntities: [] },

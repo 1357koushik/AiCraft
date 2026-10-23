@@ -1,5 +1,6 @@
 export type NavigationFailureKind =
   | 'UNREACHABLE'
+  | 'OBSTRUCTED'
   | 'STALLED'
   | 'TIMED_OUT'
   | 'STALE_TARGET'

@@ -135,6 +135,46 @@ describe('Regression: goto Unreachable Floating Target & Pillar Restriction', ()
     expect(movements!.allow1by1towers).toBe(false);
   });
 
+  it('records preflight-rejected candidate to navigationBlacklist for instant fast-path rejection on retry', async () => {
+    const bot = createMockBot(new Vec3(0, 64, 0));
+    const ctx = createMockCtx(bot);
+    const gotoAction = movementActions.find((a) => a.name === 'goto')!;
+    const skyPos = { x: 5, y: 110, z: 5 };
+
+    const firstResult = await gotoAction.execute(bot, { ...skyPos, range: 1.5 }, ctx);
+    expect(firstResult.status).toBe('failed');
+
+    // Second attempt should be immediately rejected via blacklist
+    const secondResult = await gotoAction.execute(bot, { ...skyPos, range: 1.5 }, ctx);
+    expect(secondResult.status).toBe('failed');
+    expect(secondResult.reason).toContain('blacklisted');
+  });
+
+  it('rejects target completely obstructed inside solid block wall without calling pathfinder', async () => {
+    const bot = createMockBot(new Vec3(0, 64, 0));
+    bot.setBlock(new Vec3(2, 64, 0), 'stone');
+    bot.setBlock(new Vec3(2, 65, 0), 'stone');
+    const ctx = createMockCtx(bot);
+    const gotoAction = movementActions.find((a) => a.name === 'goto')!;
+
+    const result = await gotoAction.execute(bot, { x: 2, y: 64, z: 0, range: 1.0 }, ctx);
+    expect(result.status).toBe('failed');
+    expect(result.reason).toContain('completely obstructed by solid blocks');
+    expect(bot.pathfinder.goto).not.toHaveBeenCalled();
+  });
+
+  it('detects false arrival if pathfinder goto resolves but bot is still far from target', async () => {
+    const bot = createMockBot(new Vec3(0, 64, 0));
+    // Path finder resolves without bot moving
+    bot.pathfinder.goto = vi.fn().mockResolvedValue(undefined);
+    const ctx = createMockCtx(bot);
+    const gotoAction = movementActions.find((a) => a.name === 'goto')!;
+
+    const result = await gotoAction.execute(bot, { x: 10, y: 64, z: 10, range: 1.5, verifyArrival: true }, ctx);
+    expect(result.status).toBe('failed');
+    expect(result.reason).toContain('exceeds range');
+  });
+
   it('allows allow1by1towers=true only when explicit allowPillaring option is passed', () => {
     const bot = createMockBot(new Vec3(0, 64, 0));
     const movements = updatePathfinderMovements(bot, { allowPillaring: true });

@@ -89,6 +89,7 @@ export const movementActions: ActionDef[] = [
           target: targetPos,
           range,
           intent: isHorizontalOnly ? 'horizontal' : '3d',
+          ...((params as any)?.verifyArrival !== undefined ? { verifyArrival: (params as any).verifyArrival } : {}),
         },
         ctx
       );
@@ -348,8 +349,13 @@ export const movementActions: ActionDef[] = [
     description: 'Swim towards the water surface to breathe air.',
     parameterSchema: {},
     isAvailable: (bot, obs) => obs.vitals.movementState.inWater,
-    execute: async (bot: Bot): Promise<ActionResult> => {
-      const inWater = Boolean((bot.entity as any)?.isInWater);
+    execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
+      const inWater = Boolean(
+        (bot.entity as any)?.isInWater ||
+        (bot as any).controlStates?.underwater ||
+        ctx?.observation?.vitals?.movementState?.inWater ||
+        (bot.blockAt && bot.entity?.position && ['water', 'flowing_water'].includes(bot.blockAt(bot.entity.position)?.name || ''))
+      );
       if (!inWater) {
         return { status: 'failed', reason: 'Cannot swim up: bot is not in water.' };
       }

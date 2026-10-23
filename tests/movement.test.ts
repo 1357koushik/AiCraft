@@ -1,10 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { movementActions } from '../src/actions/movement.js';
+import { navigationBlacklist } from '../src/actions/blacklist.js';
 import { ActionExecutionContext, Observation } from '../src/types/index.js';
 
 describe('Movement Actions & Spatial Elevation Robustness', () => {
+  beforeEach(() => {
+    navigationBlacklist.clear();
+  });
   const mockConfig: any = {
     perception: { scanRadius: 16 },
     safety: { protectedEntities: [] },

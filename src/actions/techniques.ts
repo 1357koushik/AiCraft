@@ -799,10 +799,15 @@ export async function techniqueChopTreeFull(
         const eyePos = bot.entity.position.offset(0, 1.6, 0);
         const dist = distance3D(eyePos, freshBlock.position);
         if (dist > 4.2) {
-          const pillarItem = getScaffoldingItem(bot);
-          if (pillarItem) {
-            const pRes = await techniquePillarUp(bot, 1, abortSignal, isCurrent);
-            if (pRes.status === 'success') pillaredBlocks++;
+          // Bounded vertical scaffolding: only pillar if log is directly overhead (horizontal offset <= 1.5)
+          // and bot has not exceeded maximum safe pillar cap of 4 blocks
+          const horizDist = Math.hypot(bot.entity.position.x - freshBlock.position.x, bot.entity.position.z - freshBlock.position.z);
+          if (horizDist <= 1.5 && freshBlock.position.y > bot.entity.position.y && pillaredBlocks < 4) {
+            const pillarItem = getScaffoldingItem(bot);
+            if (pillarItem) {
+              const pRes = await techniquePillarUp(bot, 1, abortSignal, isCurrent);
+              if (pRes.status === 'success') pillaredBlocks++;
+            }
           }
         }
 

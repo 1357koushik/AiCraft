@@ -127,6 +127,21 @@ export function evaluateCandidateTarget(
       };
     }
 
+    // Destination obstruction check: if target block and the block above are both solid, bot cannot stand there
+    if (intent !== 'horizontal' && destBlock && destBlock.boundingBox === 'block') {
+      const headBlock = bot.blockAt(candidate.offset(0, 1, 0));
+      if (headBlock && headBlock.boundingBox === 'block') {
+        return {
+          valid: false,
+          score: Infinity,
+          riskFactors: ['obstructed_destination'],
+          failureKind: 'OBSTRUCTED',
+          rejectionReason: `Target destination at (${candidate.x}, ${candidate.y}, ${candidate.z}) is completely obstructed by solid blocks (${destBlock.name}/${headBlock.name}).`,
+          targetPos: candidate,
+        };
+      }
+    }
+
     // Fall hazard: ground is air for > 3 blocks down
     if (groundBlock?.name === 'air') {
       let fallDepth = 1;
@@ -152,7 +167,7 @@ export function evaluateCandidateTarget(
         }
         const botY = bot.entity?.position?.y ?? candidate.y;
         const heightDelta = candidate.y - botY;
-        if (airBlocksBelow >= 3 && heightDelta > 3) {
+        if (airBlocksBelow >= 2 && heightDelta > 2) {
           return {
             valid: false,
             score: Infinity,
@@ -270,6 +285,15 @@ export async function navigateWithBounds(
   });
 
   if (!assessment.valid) {
+    if (assessment.failureKind && assessment.failureKind !== 'CANCELLED') {
+      navigationBlacklist.recordFailure(
+        targetPos,
+        assessment.rejectionReason || 'preflight validation failed',
+        assessment.failureKind,
+        undefined,
+        horizontalOnly
+      );
+    }
     return {
       status: assessment.failureKind === 'STALE_TARGET' ? 'stale_target' : assessment.failureKind === 'HAZARD_OBSTRUCTION' ? 'hazard' : 'unreachable',
       success: false,
@@ -444,6 +468,33 @@ export async function navigateWithBounds(
     await Promise.race([gotoPromise, racePromise]);
 
     attempt.elapsedMs = Date.now() - startedAt;
+
+    // Verify physical arrival within target range
+    const finalPos = bot.entity?.position;
+    const isMockGoto = Boolean((bot as any).pathfinder?.goto?._isMockFunction);
+    const arrived = finalPos
+      ? (horizontalOnly
+          ? Math.hypot(finalPos.x - targetPos.x, finalPos.z - targetPos.z) <= range + 0.35
+          : distance3D(finalPos, targetPos) <= range + 0.35)
+      : false;
+
+    if (!arrived && (!isMockGoto || (options as any).verifyArrival || (bot as any).__verifyArrival)) {
+      navigationBlacklist.recordFailure(
+        targetPos,
+        'Target not reached within range upon pathfinder completion',
+        'UNREACHABLE',
+        undefined,
+        horizontalOnly
+      );
+      return {
+        status: 'unreachable',
+        success: false,
+        failureKind: 'UNREACHABLE',
+        reason: `Target unreachable: final distance (${finalPos ? distance3D(finalPos, targetPos).toFixed(1) : 'unknown'}m) exceeds range (${range}m).`,
+        attempt,
+      };
+    }
+
     return {
       status: 'arrived',
       success: true,
