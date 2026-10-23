@@ -131,13 +131,28 @@ export const metaActions: ActionDef[] = [
     },
     isAvailable: () => true,
     execute: async (bot: Bot, params: any, ctx: ActionExecutionContext): Promise<ActionResult> => {
-      if (params.goal) {
-        ctx.observation.agentState.currentGoal = params.goal;
+      const goalStr = typeof params.goal === 'string' ? params.goal.trim() : null;
+      if (params.goal !== undefined && (!goalStr || goalStr.length === 0)) {
+        return { status: 'failed', reason: 'Invalid goal: goal string cannot be empty or whitespace-only.' };
       }
-      if (Array.isArray(params.planSteps)) {
+      const hasValidSteps = Array.isArray(params.planSteps) && params.planSteps.length > 0;
+      if (!goalStr && !hasValidSteps) {
+        return { status: 'failed', reason: 'Invalid parameters: must provide non-empty goal or non-empty planSteps.' };
+      }
+      if (params.planSteps !== undefined && !Array.isArray(params.planSteps)) {
+        return { status: 'failed', reason: 'Invalid planSteps: must be an array of strings.' };
+      }
+
+      if (goalStr && ctx?.observation?.agentState) {
+        ctx.observation.agentState.currentGoal = goalStr;
+      }
+      if (Array.isArray(params.planSteps) && ctx?.observation?.agentState) {
         ctx.observation.agentState.planSteps = params.planSteps.map((s: any) => parsePlanStep(s));
       }
-      return { status: 'success', reason: `Updated goal to: "${ctx.observation.agentState.currentGoal}" with ${ctx.observation.agentState.planSteps.length} step(s).` };
+
+      const current = ctx?.observation?.agentState?.currentGoal || goalStr || '';
+      const stepCount = ctx?.observation?.agentState?.planSteps?.length || (Array.isArray(params.planSteps) ? params.planSteps.length : 0);
+      return { status: 'success', reason: `Updated goal to: "${current}" with ${stepCount} step(s).` };
     },
   },
   {

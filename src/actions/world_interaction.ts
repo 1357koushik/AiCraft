@@ -165,12 +165,18 @@ export const worldInteractionActions: ActionDef[] = [
       if (!isActionContextActive(ctx)) {
         return { status: 'interrupted', reason: 'Dismount cancelled before start.' };
       }
-      const isRiding = Boolean((bot as any).vehicle || (bot.entity as any)?.vehicle);
+      const isRiding = Boolean(
+        (bot as any).vehicle ||
+        (bot.entity as any)?.vehicle ||
+        ctx?.observation?.vitals?.movementState?.isRiding
+      );
       if (!isRiding) {
         return { status: 'failed', reason: 'Cannot dismount: bot is not riding any vehicle.' };
       }
       try {
-        await bot.dismount();
+        if (typeof bot.dismount === 'function') {
+          await bot.dismount();
+        }
         return { status: 'success', reason: 'Dismounted from vehicle.' };
       } catch (err: any) {
         if (!isActionContextActive(ctx)) {
