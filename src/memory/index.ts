@@ -434,6 +434,34 @@ export class MemoryManager {
     });
   }
 
+  /**
+   * Records a confirmed portal location in persistent memory.
+   */
+  public recordPortal(
+    dimension: 'overworld' | 'the_nether' | 'the_end',
+    pos: { x: number; y: number; z: number },
+    metadata?: Record<string, any>
+  ): void {
+    this.recordKnownLocation({
+      name: `${dimension}_portal`,
+      type: 'portal',
+      position: pos,
+      dimension,
+      metadata: { dimension, ...metadata },
+    });
+  }
+
+  /**
+   * Retrieves the recorded portal location for the given dimension, if known.
+   */
+  public getPortal(dimension: 'overworld' | 'the_nether' | 'the_end'): { x: number; y: number; z: number } | null {
+    const loc = (this.memoryNotes.knownLocations || []).find(
+      (l) => l.type === 'portal' && (l.metadata?.dimension === dimension || l.name === `${dimension}_portal`)
+    );
+    return loc ? loc.position : null;
+  }
+
+
   public getExploredRegions(): ExploredRegionRecord[] {
     return this.memoryNotes.exploredRegions || [];
   }
