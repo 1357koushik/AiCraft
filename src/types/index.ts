@@ -657,3 +657,13 @@ export interface GoalCondition {
   position?: { x: number; y: number; z: number; tolerance?: number };
 }
 
+export interface HazardSignal {
+  type: 'FREE_FALL' | 'SUFFOCATION' | 'EXPLOSION_IMMINENT' | 'LAVA_IMMERSED';
+  severity: 'WARNING' | 'CRITICAL' | 'FATAL';
+  sourceEntity?: any;
+  sourceBlock?: Vec3;
+  recommendedAction: 'CLUTCH_WATER' | 'DIG_OUT' | 'SHIELD_DEPLOY' | 'SPRINT_RETREAT';
+  details?: string;
+}
+
+

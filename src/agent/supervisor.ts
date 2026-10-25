@@ -5,6 +5,7 @@ import { AppConfig } from '../config/index.js';
 import { Observation } from '../types/index.js';
 import { isAlive } from '../safety/index.js';
 import { buildObservation } from '../perception/index.js';
+import { SUFFOCATING_GRAVITY_BLOCKS } from '../actions/hazards.js';
 
 export interface SafetySupervisorConfig {
   bot: Bot;
@@ -149,6 +150,27 @@ export class SafetySupervisor {
 
         if (isSubmerged || oxygenLow) {
           this.requestUrgentEvaluation('Water drowning emergency', ActionPriority.SURVIVAL_EMERGENCY);
+          return;
+        }
+      }
+
+      // Constant-time check 3: Free fall (Y velocity falling fast or fallDistance > 3)
+      const onGround = Boolean(this.bot.entity.onGround);
+      const inLiquid = inLava || inWater;
+      const velocityY = this.bot.entity.velocity?.y ?? 0;
+      const fallDist = (this.bot.entity as any)?.fallDistance ?? 0;
+      if (!onGround && !inLiquid && (fallDist >= 3.0 || velocityY < -0.5)) {
+        this.requestUrgentEvaluation('Free-fall hazard', ActionPriority.SURVIVAL_EMERGENCY);
+        return;
+      }
+
+      // Constant-time check 4: Suffocation (head inside falling gravity block)
+      if (this.bot.blockAt) {
+        const headPos = this.bot.entity.position.offset(0, 1.6, 0).floored();
+        const headBlock = this.bot.blockAt(headPos);
+        if (headBlock && headBlock.boundingBox === 'block' && SUFFOCATING_GRAVITY_BLOCKS.has(headBlock.name)) {
+          this.requestUrgentEvaluation('Suffocation hazard', ActionPriority.SURVIVAL_EMERGENCY);
+          return;
         }
       }
     });
@@ -182,6 +204,32 @@ export class SafetySupervisor {
       return;
     }
 
+    // Suffocation check (head inside falling gravity block)
+    if (this.bot.blockAt) {
+      const headPos = this.bot.entity.position.offset(0, 1.6, 0).floored();
+      const headBlock = this.bot.blockAt(headPos);
+      if (headBlock && headBlock.boundingBox === 'block' && SUFFOCATING_GRAVITY_BLOCKS.has(headBlock.name)) {
+        this.requestUrgentEvaluation('Suffocation audit detected', ActionPriority.SURVIVAL_EMERGENCY);
+        return;
+      }
+    }
+
+    // Free fall check
+    const onGround = Boolean(this.bot.entity.onGround);
+    const inLiquid = inLava || inWater;
+    const velocityY = this.bot.entity.velocity?.y ?? 0;
+    const fallDist = (this.bot.entity as any)?.fallDistance ?? 0;
+    if (!onGround && !inLiquid && (fallDist >= 3.0 || velocityY < -0.5)) {
+      this.requestUrgentEvaluation('Free-fall audit detected', ActionPriority.SURVIVAL_EMERGENCY);
+      return;
+    }
+
+    // Imminent creeper explosion check
+    if (this.findImminentExplosionThreat()) {
+      this.requestUrgentEvaluation('Imminent creeper explosion detected', ActionPriority.COMBAT_REFLEX);
+      return;
+    }
+
     // Critical health check with nearby hostile
     const health = this.bot.health ?? 20;
     if (health <= this.config.safety.reflexes.fleeHealthThreshold) {
@@ -199,6 +247,23 @@ export class SafetySupervisor {
         this.requestUrgentEvaluation('Hostile within auto-defense range', ActionPriority.COMBAT_REFLEX);
       }
     }
+  }
+
+  private findImminentExplosionThreat(): boolean {
+    if (!this.bot.entities || !this.bot.entity) return false;
+    const botPos = this.bot.entity.position;
+    for (const id of Object.keys(this.bot.entities)) {
+      const e = this.bot.entities[id];
+      if (!e || e === this.bot.entity || !isAlive(e) || e.name !== 'creeper' || !e.position) continue;
+      const dist = Math.hypot(e.position.x - botPos.x, e.position.y - botPos.y, e.position.z - botPos.z);
+      if (dist <= 5.0) {
+        const isSwelling = (e as any).metadata?.[16] === 1 || (e as any).fuse > 0 || (e as any).ignited === true;
+        if (isSwelling || dist <= 3.2) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private findNearestHostileDistance(): number {

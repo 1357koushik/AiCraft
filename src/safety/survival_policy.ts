@@ -555,7 +555,18 @@ function getGenericToolTier(toolName: string): number {
  * - Water placement is dimension- and context-dependent (fails entirely in the Nether,
  *   and causes unpredictable flooding in enclosed underground spaces).
  */
-export function isWaterBucketClutchPermitted(): boolean {
-  // Strictly disabled as a default response
-  return false;
+export function isWaterBucketClutchPermitted(
+  bot?: Bot,
+  context?: { isEmergencyFall?: boolean }
+): boolean {
+  // If not an active emergency fall, disabled by default to prevent reckless acrobatic usage
+  if (!context?.isEmergencyFall) {
+    return false;
+  }
+  // Strictly prohibited in the Nether as water evaporates immediately
+  const dim = (bot?.game as any)?.dimension;
+  if (dim === 'the_nether' || dim === 'minecraft:the_nether') {
+    return false;
+  }
+  return true;
 }

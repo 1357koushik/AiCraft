@@ -8,6 +8,14 @@ import { distance3D } from '../utils/math.js';
 import { ActionArbiter, ActionPriority } from './arbiter.js';
 import { isAlive } from '../safety/index.js';
 import { selectBestFood } from '../safety/survival_policy.js';
+import {
+  detectFreeFallHazard,
+  detectSuffocationHazard,
+  detectExplosionHazard,
+  techniqueWaterBucketClutch,
+  techniqueEscapeSuffocation,
+  techniqueDefendExplosion,
+} from '../actions/hazards.js';
 
 export interface ReflexTriggerResult {
   triggered: boolean;
@@ -436,7 +444,93 @@ export class ReflexLayer {
       };
     }
 
-    // 3. Critically low health emergency flee reflex
+    // 3. Free-fall emergency reflex (Water bucket clutch)
+    const fallHazard = detectFreeFallHazard(bot, obs);
+    if (fallHazard && (fallHazard.severity === 'FATAL' || fallHazard.severity === 'CRITICAL' || fallHazard.severity === 'WARNING')) {
+      if (this.isEating) {
+        try { bot.deactivateItem(); } catch {}
+        this.isEating = false;
+      }
+      this.logger?.warn?.(`REFLEX TRIGGERED: Free fall hazard detected (${fallHazard.details})! Deploying water bucket clutch.`);
+
+      let actionId = '';
+      let epoch = 0;
+      if (arbiter) {
+        arbiter.preempt(bot, 'Free-fall emergency: water bucket clutch', ActionPriority.SURVIVAL_EMERGENCY);
+        const actionInfo = arbiter.startAction('water_bucket_clutch', ActionPriority.SURVIVAL_EMERGENCY, bot, ['movement', 'look', 'hands']);
+        actionId = actionInfo.actionId;
+        epoch = actionInfo.epoch;
+      }
+
+      try {
+        const res = await techniqueWaterBucketClutch(bot, { bot, observation: obs });
+        return {
+          triggered: true,
+          name: 'water_bucket_clutch',
+          result: res,
+        };
+      } finally {
+        if (arbiter && actionId) arbiter.finishAction(actionId, epoch, bot);
+      }
+    }
+
+    // 4. Suffocation emergency reflex (Gravel / sand / solid block encasing head)
+    const suffocationHazard = detectSuffocationHazard(bot);
+    if (suffocationHazard) {
+      if (this.isEating) {
+        try { bot.deactivateItem(); } catch {}
+        this.isEating = false;
+      }
+      this.logger?.warn?.(`REFLEX TRIGGERED: Suffocation hazard detected (${suffocationHazard.details})! Mining out obstructing block.`);
+
+      let actionId = '';
+      let epoch = 0;
+      if (arbiter) {
+        arbiter.preempt(bot, 'Suffocation emergency: mining obstructing block', ActionPriority.SURVIVAL_EMERGENCY);
+        const actionInfo = arbiter.startAction('escape_suffocation', ActionPriority.SURVIVAL_EMERGENCY, bot, ['hands', 'look']);
+        actionId = actionInfo.actionId;
+        epoch = actionInfo.epoch;
+      }
+
+      try {
+        const res = await techniqueEscapeSuffocation(bot, { bot, observation: obs });
+        return {
+          triggered: true,
+          name: 'escape_suffocation',
+          result: res,
+        };
+      } finally {
+        if (arbiter && actionId) arbiter.finishAction(actionId, epoch, bot);
+      }
+    }
+
+    // 5. Imminent explosion emergency reflex (Creeper swelling / blast)
+    const explosionHazard = detectExplosionHazard(bot, obs);
+    if (explosionHazard && explosionHazard.sourceEntity) {
+      this.logger?.warn?.(`REFLEX TRIGGERED: Explosive threat detected (${explosionHazard.details})! Deploying defense.`);
+
+      let actionId = '';
+      let epoch = 0;
+      if (arbiter) {
+        arbiter.preempt(bot, 'Imminent explosion emergency', ActionPriority.COMBAT_REFLEX);
+        const actionInfo = arbiter.startAction('defend_explosion', ActionPriority.COMBAT_REFLEX, bot, ['movement', 'look', 'hands']);
+        actionId = actionInfo.actionId;
+        epoch = actionInfo.epoch;
+      }
+
+      try {
+        const res = await techniqueDefendExplosion(bot, explosionHazard.sourceEntity, { bot, observation: obs });
+        return {
+          triggered: true,
+          name: 'defend_explosion',
+          result: res,
+        };
+      } finally {
+        if (arbiter && actionId) arbiter.finishAction(actionId, epoch, bot);
+      }
+    }
+
+    // 6. Critically low health emergency flee reflex
     if (rConfig.emergencyFlee && obs.vitals.health <= rConfig.fleeHealthThreshold) {
       const hostileNearby = obs.entities.find((e) => e.isHostile && e.distance < 8);
       if (hostileNearby) {
