@@ -627,3 +627,33 @@ export interface TaskExecutionResult {
   evidence: string[];
   durationMs: number;
 }
+
+export interface OperatorContract {
+  id: string;
+  name: string;
+  actionName: string;
+  producedItems: Array<{ item: string; count: number }>;
+  requiredTools?: Array<{ toolType: string; minTier: number }>;
+  consumedItems: Array<{ item: string; count: number }>;
+  workstation?: 'crafting_table' | 'furnace' | 'smoker' | 'blast_furnace' | 'brewing_stand';
+  defaultParams?: Record<string, any>;
+  estimatedDurationMs?: number;
+}
+
+export interface PlanStepNode {
+  id: string;
+  operatorId: string;
+  actionName: string;
+  params: Record<string, any>;
+  prerequisites: string[];
+  status: TaskStatus;
+}
+
+export interface GoalCondition {
+  item?: string;
+  count?: number;
+  tool?: string;
+  minTier?: number;
+  position?: { x: number; y: number; z: number; tolerance?: number };
+}
+
