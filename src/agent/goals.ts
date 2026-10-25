@@ -16,6 +16,7 @@ import { AvailabilityEngine } from '../actions/availability.js';
 import { ACTION_ALLOWED_PARAMS } from '../prompt/schema.js';
 import { defaultDAGCompiler } from './planner/dag.js';
 import { defaultOperatorRegistry } from './planner/operator.js';
+import { defaultPlanCache, PlanCache } from '../memory/plan_cache.js';
 
 export function getBotInventoryCounts(bot: any): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -273,7 +274,11 @@ export function parseAndValidateGoalSpec(
  * Detects already-satisfied prerequisites and marks them 'satisfied' at plan start.
  */
 export class DeterministicGoalResolver {
-  public static resolve(spec: GoalSpec, currentInventory: Record<string, number> = {}): TaskPlan | null {
+  public static resolve(
+    spec: GoalSpec,
+    currentInventory: Record<string, number> = {},
+    options?: { knownWorkstations?: string[] }
+  ): TaskPlan | null {
     const now = Date.now();
     const tasks: TaskNode[] = [];
 
@@ -302,8 +307,17 @@ export class DeterministicGoalResolver {
           (op) => op.consumedItems.length > 0 || (op.requiredTools && op.requiredTools.length > 0) || op.workstation
         );
         if (isComposite && !['oak_planks', 'stick', 'crafting_table'].includes(spec.item)) {
-          const dynamicPlan = defaultDAGCompiler.compilePlan(spec.id, spec.item, targetCount, currentInventory);
+          const goalHash = PlanCache.computeGoalHash(`have_${spec.item}`, targetCount);
+          const cachedPlan = defaultPlanCache.get(goalHash, currentInventory, options?.knownWorkstations);
+          if (cachedPlan && cachedPlan.tasks.length > 0) {
+            return cachedPlan;
+          }
+
+          const dynamicPlan = defaultDAGCompiler.compilePlan(spec.id, spec.item, targetCount, currentInventory, options);
           if (dynamicPlan && dynamicPlan.tasks.length > 0) {
+            defaultPlanCache.recordSuccess(goalHash, dynamicPlan, 1000, 1.0, {
+              requiredWorkstations: options?.knownWorkstations,
+            });
             return dynamicPlan;
           }
         }

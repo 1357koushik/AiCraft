@@ -14,6 +14,9 @@ import {
   GoalOutcomeRecord,
   StrategyRankingRecord,
 } from '../types/index.js';
+import { PlanCache, IPlanCacheEntry } from './plan_cache.js';
+
+export { PlanCache, IPlanCacheEntry };
 
 export function countMatchingInventoryItems(
   inventoryCounts: Record<string, number>,
@@ -165,6 +168,7 @@ export class MemoryManager {
   private memoryNotes: MemoryNotes;
   private history: HistoryStepRecord[] = [];
   private agentState: AgentInternalState;
+  public planCache: PlanCache = new PlanCache();
 
   constructor(worldId: string = 'local_world', dataDir: string = './data') {
     // Sanitize worldId to strictly prevent path traversal while appending a hash to prevent world collisions
@@ -730,6 +734,7 @@ export class MemoryManager {
           failedTargets: activeFailedTargets,
           goalOutcomes: (this.memoryNotes.goalOutcomes || []).slice(-20),
           strategyRankings: this.memoryNotes.strategyRankings || {},
+          planCache: this.planCache.serialize(),
         },
         agentState: this.agentState,
       };
@@ -828,7 +833,12 @@ export class MemoryManager {
             failedTargets,
             goalOutcomes,
             strategyRankings,
+            planCache: parsed.memory.planCache,
           };
+
+          if (parsed.memory.planCache && typeof parsed.memory.planCache === 'object') {
+            this.planCache.deserialize(parsed.memory.planCache);
+          }
         }
 
         if (parsed.agentState && typeof parsed.agentState === 'object') {

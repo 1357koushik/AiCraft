@@ -31,6 +31,7 @@ export class AgentController {
   private taskExecutor: TaskExecutor;
   private llmProvider: ILLMProvider;
   private respawnTimer: NodeJS.Timeout | null = null;
+  private autosaveTimer: NodeJS.Timeout | null = null;
   private recentAttackedTargets: Map<number, number> = new Map();
 
   private isRunning = false;
@@ -128,13 +129,32 @@ export class AgentController {
 
   public stop(): void {
     this.isRunning = false;
+    if (this.autosaveTimer) {
+      clearInterval(this.autosaveTimer);
+      this.autosaveTimer = null;
+    }
     this.cleanupEventListeners();
+    try {
+      this.memory.saveToDisk();
+      this.logger.info('Flushed persistent memory to disk on stop.');
+    } catch {}
     this.logger.info('Stopping agent loop...');
   }
 
   public async start(): Promise<void> {
     this.isRunning = true;
     this.logger.info('Agent loop started.');
+
+    if (!this.autosaveTimer) {
+      this.autosaveTimer = setInterval(() => {
+        try {
+          this.memory.saveToDisk();
+          this.logger.debug?.('Periodic autosave flushed memory to disk.');
+        } catch (err: any) {
+          this.logger.error({ err }, 'Autosave error: ' + err.message);
+        }
+      }, 60000);
+    }
 
     while (this.isRunning) {
       if (this.isPaused) {
@@ -779,10 +799,13 @@ export class AgentController {
       this.reflex.autoDefendAttacker(this.bot, liveAttacker, this.arbiter).catch(() => {});
     });
 
-    // Handle bot disconnection and kick events to preempt running tasks
+    // Handle bot disconnection and kick events to preempt running tasks and persist state
     this.addBotListener('end', () => {
-      this.logger.warn('Bot connection ended. Preempting active tasks.');
+      this.logger.warn('Bot connection ended. Preempting active tasks and persisting state.');
       this.arbiter.preempt(this.bot, 'Bot disconnected', ActionPriority.SURVIVAL_EMERGENCY);
+      try {
+        this.memory.saveToDisk();
+      } catch {}
       this.cleanupEventListeners();
     });
 

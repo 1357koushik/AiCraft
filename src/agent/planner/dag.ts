@@ -5,6 +5,7 @@ import { normalizeItemName, getBotInventoryCounts } from '../goals.js';
 export interface PlanGenerationOptions {
   registry?: OperatorRegistry;
   allowWorkstationRecursion?: boolean;
+  knownWorkstations?: string[];
 }
 
 export class DynamicDAGCompiler {
@@ -50,7 +51,8 @@ export class DynamicDAGCompiler {
       virtualInv,
       tasks,
       visitedInStack,
-      currentInventory
+      currentInventory,
+      options
     );
 
     if (!rootTaskId) {
@@ -91,7 +93,8 @@ export class DynamicDAGCompiler {
     virtualInv: Record<string, number>,
     tasks: TaskNode[],
     visitedInStack: Set<string>,
-    currentInventory: Record<string, number>
+    currentInventory: Record<string, number>,
+    options: PlanGenerationOptions = {}
   ): string | null {
     const currentCount = virtualInv[item] || 0;
     if (currentCount >= count) {
@@ -138,7 +141,8 @@ export class DynamicDAGCompiler {
             virtualInv,
             tasks,
             visitedInStack,
-            currentInventory
+            currentInventory,
+            options
           );
           if (!toolTaskId && !this.checkHasTool(reqTool.toolType, reqTool.minTier, virtualInv)) {
             visitedInStack.delete(item);
@@ -151,15 +155,17 @@ export class DynamicDAGCompiler {
 
     // 2. Workstation requirements
     if (op.workstation) {
+      const isKnownInWorld = options.knownWorkstations?.includes(op.workstation);
       const workstationCount = virtualInv[op.workstation] || 0;
-      if (workstationCount < 1) {
+      if (!isKnownInWorld && workstationCount < 1) {
         const wsTaskId = this.resolveRequirement(
           op.workstation,
           1,
           virtualInv,
           tasks,
           visitedInStack,
-          currentInventory
+          currentInventory,
+          options
         );
         if (!wsTaskId && (virtualInv[op.workstation] || 0) < 1) {
           visitedInStack.delete(item);
@@ -181,7 +187,8 @@ export class DynamicDAGCompiler {
           virtualInv,
           tasks,
           visitedInStack,
-          currentInventory
+          currentInventory,
+          options
         );
         if (!ingTaskId && (virtualInv[ingredient.item] || 0) < totalIngredientNeeded) {
           visitedInStack.delete(item);

@@ -329,6 +329,7 @@ export interface MemoryNotes {
   failedTargets?: FailedTargetMemoryRecord[];
   goalOutcomes?: GoalOutcomeRecord[];
   strategyRankings?: Record<string, StrategyRankingRecord>;
+  planCache?: Record<string, any>;
 }
 
 export interface AgentInternalState {
