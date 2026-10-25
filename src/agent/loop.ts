@@ -16,6 +16,9 @@ import { validateActionParams } from '../prompt/schema.js';
 import { ILLMProvider, Observation, RecentEventsState, ActionResult } from '../types/index.js';
 import { buildSystemPrompt, buildUserPrompt } from '../prompt/index.js';
 import { distance3D } from '../utils/math.js';
+import { DiagnosticSnapshot } from '../runner/metrics_aggregator.js';
+
+export const SERVER_LAG_TOLERANCE_MS = 500;
 
 export class AgentController {
   private bot: Bot;
@@ -181,6 +184,7 @@ export class AgentController {
   }
 
   private async step(): Promise<void> {
+    const planStartTime = Date.now();
     this.memory.state.stepNumber++;
     const stepNum = this.memory.state.stepNumber;
 
@@ -272,6 +276,13 @@ export class AgentController {
     }
 
     // 5.5. Deterministic Goal/Task Execution: execute ready deterministic task without LLM call
+    const planLatencyMs = Date.now() - planStartTime;
+    if (planLatencyMs > 50) {
+      this.logger.debug?.(
+        `[STEP ${stepNum}:PERF] Step planning latency ${planLatencyMs}ms exceeded 50ms tick budget (lag spike tolerance applied).`
+      );
+    }
+
     const readyTask = this.taskExecutor.getNextReadyTask();
     if (readyTask) {
       this.logger.info(
@@ -472,7 +483,7 @@ export class AgentController {
       this.logger.info(`[STEP ${stepNum}:DISPATCH] Action [${actionIdx + 1}/${actionsToRun.length}]: ${item.action} | Priority: NORMAL | Params: ${JSON.stringify(item.params)}`);
       executedActions.push(item);
 
-      const actionTimeout = Math.min(25000, remainingBatchMs);
+      const actionTimeout = Math.min(25000, remainingBatchMs) + SERVER_LAG_TOLERANCE_MS;
       const { actionId, signal, epoch } = this.arbiter.startAction(item.action, ActionPriority.NORMAL, this.bot);
       let result: ActionResult;
       try {
@@ -600,6 +611,9 @@ export class AgentController {
         });
       }
       this.recentEvents.deathRespawn = true;
+      try {
+        this.captureDiagnosticSnapshot('Bot death event');
+      } catch {}
 
       // Clean physical pathfinding and controls immediately
       try {
@@ -917,6 +931,43 @@ export class AgentController {
       }
       this.boundListeners = [];
     }
+  }
+
+  public captureDiagnosticSnapshot(failureReason: string): DiagnosticSnapshot {
+    const pos = this.bot?.entity?.position;
+    const inv = getBotInventoryCounts(this.bot);
+    const vitals = {
+      health: this.bot?.health ?? 20,
+      food: this.bot?.food ?? 20,
+      oxygen: this.bot?.oxygenLevel ?? 300,
+    };
+    const activeTask = this.taskExecutor?.getNextReadyTask()?.id;
+    const pathfinderGoal = (this.bot as any)?.pathfinder?.goal;
+
+    const lastWorldEvents = [
+      ...this.recentEvents.damageTaken.map((d) => ({ type: 'damage', ...d })),
+      ...this.recentEvents.blocksBroken.map((b) => ({ type: 'blockBroken', block: b })),
+      ...this.recentEvents.blocksPlaced.map((b) => ({ type: 'blockPlaced', block: b })),
+      ...this.recentEvents.mobsKilled.map((m) => ({ type: 'mobKilled', mob: m })),
+      ...this.recentEvents.itemsPickedUp.map((i) => ({ type: 'itemPickedUp', item: i })),
+      ...this.recentEvents.chatMessages.map((c) => ({ type: 'chat', ...c })),
+    ].slice(-50);
+
+    return {
+      timestamp: new Date().toISOString(),
+      seed: this.config?.server?.host || 'default',
+      stepNumber: this.memory?.state?.stepNumber,
+      botPosition: pos
+        ? { x: Math.round(pos.x * 10) / 10, y: Math.round(pos.y * 10) / 10, z: Math.round(pos.z * 10) / 10 }
+        : undefined,
+      botVitals: vitals,
+      inventory: inv,
+      lastWorldEvents,
+      activeGoal: this.taskExecutor?.activeGoal?.id || this.memory?.state?.currentGoal,
+      activeTask,
+      pathfinderGoal: pathfinderGoal ? String(pathfinderGoal) : undefined,
+      failureReason,
+    };
   }
 
   public updateBotInstance(newBot: Bot): void {
