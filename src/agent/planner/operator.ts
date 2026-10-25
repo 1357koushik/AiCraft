@@ -456,6 +456,32 @@ export const BASE_OPERATORS: IOperatorDefinition[] = [
     buildParams: (count) => ({ item: 'flint_and_steel', count: Math.max(count, 1) }),
   },
 
+  // 22. Farm Blaze Rods
+  {
+    id: 'op_farm_blaze_rods',
+    name: 'Farm Blaze Rods',
+    actionName: 'attack',
+    category: 'gather',
+    producedItems: [{ item: 'blaze_rod', count: 1 }],
+    consumedItems: [],
+    requiredTools: [],
+    budgetMs: 180000,
+    maxRetries: 3,
+    buildParams: (count) => ({ targetId: 'blaze', count: Math.max(count, 1) }),
+  },
+
+  // 23. Craft Blaze Powder
+  {
+    id: 'op_craft_blaze_powder',
+    name: 'Craft Blaze Powder',
+    actionName: 'craft_item',
+    category: 'craft',
+    producedItems: [{ item: 'blaze_powder', count: 2 }],
+    consumedItems: [{ item: 'blaze_rod', count: 1 }],
+    budgetMs: 15000,
+    maxRetries: 2,
+    buildParams: (count) => ({ item: 'blaze_powder', count: Math.max(count, 2) }),
+  },
 ];
 
 export class OperatorRegistry {
