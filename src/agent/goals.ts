@@ -14,6 +14,8 @@ import {
 import { ActionArbiter, ActionPriority } from './arbiter.js';
 import { AvailabilityEngine } from '../actions/availability.js';
 import { ACTION_ALLOWED_PARAMS } from '../prompt/schema.js';
+import { defaultDAGCompiler } from './planner/dag.js';
+import { defaultOperatorRegistry } from './planner/operator.js';
 
 export function getBotInventoryCounts(bot: any): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -38,6 +40,12 @@ export function normalizeItemName(raw: string): string {
   if (['table', 'workbench', 'crafting_table'].includes(lower)) return 'crafting_table';
   if (['wooden_pick', 'wood_pickaxe', 'wooden_pickaxe'].includes(lower)) return 'wooden_pickaxe';
   if (['stone_pick', 'stone_pickaxe'].includes(lower)) return 'stone_pickaxe';
+  if (['iron_pick', 'iron_pickaxe'].includes(lower)) return 'iron_pickaxe';
+  if (['diamond_pick', 'diamond_pickaxe'].includes(lower)) return 'diamond_pickaxe';
+  if (['wooden_sword', 'wood_sword'].includes(lower)) return 'wooden_sword';
+  if (['stone_sword'].includes(lower)) return 'stone_sword';
+  if (['iron_sword'].includes(lower)) return 'iron_sword';
+  if (['smelter', 'furnace'].includes(lower)) return 'furnace';
   return lower;
 }
 
@@ -204,8 +212,8 @@ export function parseAndValidateGoalSpec(
     };
   }
 
-  // 4. Tool crafting: "craft wooden_pickaxe", "craft a wooden pickaxe", "make a stone pickaxe"
-  const toolMatch = text.match(/\b(?:craft|make|create|get)\s+(?:a\s+)?([a-zA-Z_]+[\s_]pickaxe|crafting_table|furnace)\b/i);
+  // 4. Tool & item crafting: "craft wooden_pickaxe", "craft an iron pickaxe", "make a furnace", "craft an iron sword"
+  const toolMatch = text.match(/\b(?:craft|make|create|get)\s+(?:an?\s+)?([a-zA-Z_]+[\s_](?:pickaxe|sword|axe|shovel|helmet|chestplate|leggings|boots)|crafting_table|furnace|shield|bucket)\b/i);
   if (toolMatch) {
     const tool = normalizeItemName(toolMatch[1]);
     return {
@@ -288,6 +296,18 @@ export class DeterministicGoalResolver {
           evidence: [`Item count ${spec.item} (${currentCount}) already meets target (${targetCount})`],
         });
       } else {
+        // If the item requires a composite multi-step recipe (e.g. furnace, iron_ingot, iron_pickaxe, iron_sword, etc.)
+        const candidateOps = defaultOperatorRegistry.getOperatorsFor(spec.item);
+        const isComposite = candidateOps.some(
+          (op) => op.consumedItems.length > 0 || (op.requiredTools && op.requiredTools.length > 0) || op.workstation
+        );
+        if (isComposite && !['oak_planks', 'stick', 'crafting_table'].includes(spec.item)) {
+          const dynamicPlan = defaultDAGCompiler.compilePlan(spec.id, spec.item, targetCount, currentInventory);
+          if (dynamicPlan && dynamicPlan.tasks.length > 0) {
+            return dynamicPlan;
+          }
+        }
+
         const actionName = spec.item.includes('log')
           ? 'chop_tree'
           : spec.item === 'cobblestone' || spec.item === 'stone'
@@ -538,6 +558,14 @@ export class DeterministicGoalResolver {
         createdAt: now,
         status: hasStonePick ? 'completed' : 'active',
       };
+    }
+
+    // 2c. Dynamic Backward-Chaining DAG Resolver for arbitrary tools/workstations
+    if (spec.kind === 'have_tool') {
+      const dynamicPlan = defaultDAGCompiler.compilePlan(spec.id, spec.tool, 1, currentInventory);
+      if (dynamicPlan && dynamicPlan.tasks.length > 0) {
+        return dynamicPlan;
+      }
     }
 
     // 3. Reach Goal
