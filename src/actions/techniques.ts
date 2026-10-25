@@ -1997,3 +1997,33 @@ export async function techniqueSmeltPipeline(
 ): Promise<ActionResult> {
   return techniqueSmeltItem(bot, itemToSmelt, count, fuelItemName, abortSignal, isCurrent);
 }
+
+/**
+ * Technique: Automate Iron Smelting Cycle
+ * Closed-loop iron processing: checks raw_iron or iron_ore in inventory, determines fuel,
+ * executes furnace smelting via withWorkstation, and collects iron_ingots.
+ */
+export async function techniqueAutomateIronSmeltCycle(
+  bot: Bot,
+  targetIngotCount?: number,
+  fuelPreference?: string,
+  abortSignal?: AbortSignal,
+  isCurrent?: () => boolean
+): Promise<ActionResult> {
+  if (abortSignal?.aborted || (isCurrent && !isCurrent())) {
+    return { status: 'interrupted', reason: 'Iron smelting cycle cancelled before start.' };
+  }
+
+  const items = bot.inventory ? bot.inventory.items() : [];
+  const rawIronItem = items.find((i) => i.name === 'raw_iron' || i.name === 'iron_ore');
+  if (!rawIronItem || rawIronItem.count <= 0) {
+    return { status: 'failed', reason: 'No raw iron or iron ore available in inventory to smelt.' };
+  }
+
+  const countToSmelt = targetIngotCount && targetIngotCount > 0
+    ? Math.min(targetIngotCount, rawIronItem.count)
+    : rawIronItem.count;
+
+  return techniqueSmeltItem(bot, rawIronItem.name, countToSmelt, fuelPreference, abortSignal, isCurrent);
+}
+

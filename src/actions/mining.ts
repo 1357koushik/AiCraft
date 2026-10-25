@@ -4,7 +4,7 @@ import { goals } from 'mineflayer-pathfinder';
 import { ActionExecutionContext, ActionResult } from '../types/index.js';
 import { distance3D } from '../utils/math.js';
 import { isActionContextActive } from '../agent/arbiter.js';
-import { updatePathfinderMovements, techniqueVacuumDrops } from './techniques.js';
+import { updatePathfinderMovements, techniqueVacuumDrops, techniqueMineStaircase } from './techniques.js';
 import { navigationBlacklist, NavigationFailureKind } from './blacklist.js';
 
 function toNavigationFailureKind(kind?: MiningFailureKind): NavigationFailureKind {
@@ -830,3 +830,125 @@ function getInventoryCount(bot: Bot, itemName: string): number {
   }
   return count;
 }
+
+/**
+ * Technique: Staircase Mining for Iron Ore
+ * Safely descends via staircase mining toward optimal iron Y-levels (Y=16 to 32),
+ * scans for nearby iron ore veins, extracts them using vein mining, and collects drops.
+ */
+export async function techniqueStaircaseMineIron(
+  bot: Bot,
+  targetOreCount: number = 8,
+  targetY: number = 16,
+  ctx: ActionExecutionContext
+): Promise<ActionResult> {
+  if (!isActionContextActive(ctx)) {
+    return { status: 'interrupted', reason: 'Iron staircase mining cancelled before start.' };
+  }
+
+  // 1. Tool check: Iron ore requires stone pickaxe (tier >= 2)
+  const bestPick = findBestPickaxeInInventory(bot, 2);
+  if (!bestPick) {
+    return {
+      status: 'failed',
+      reason: 'A stone pickaxe or higher is required to harvest iron ore.',
+      details: { failureKind: 'WRONG_TOOL_TIER' },
+    };
+  }
+
+  const getIronCount = () => {
+    if (!bot.inventory) return 0;
+    const items = bot.inventory.items();
+    let total = 0;
+    for (const it of items) {
+      if (it.name === 'raw_iron' || it.name === 'iron_ore' || it.name === 'deepslate_iron_ore') {
+        total += it.count || 0;
+      }
+    }
+    return total;
+  };
+
+  const initialCount = getIronCount();
+  if (initialCount >= targetOreCount) {
+    return {
+      status: 'success',
+      reason: `Iron ore requirement already satisfied (${initialCount}/${targetOreCount}).`,
+      details: { minedIron: 0, currentIron: initialCount },
+    };
+  }
+
+  let totalMined = 0;
+  const maxCycles = 15;
+
+  for (let cycle = 0; cycle < maxCycles; cycle++) {
+    if (!isActionContextActive(ctx)) {
+      return { status: 'interrupted', reason: 'Iron staircase mining cancelled.' };
+    }
+
+    if (getIronCount() >= targetOreCount) {
+      break;
+    }
+
+    // A. Check for any exposed iron ore blocks in vicinity (16m radius)
+    let oreBlock: any = null;
+    if (typeof bot.findBlock === 'function') {
+      oreBlock = bot.findBlock({
+        matching: (b: any) => b.name === 'iron_ore' || b.name === 'deepslate_iron_ore',
+        maxDistance: 16,
+      });
+    }
+
+    if (oreBlock) {
+      ctx.logger?.info?.(`[IRON_MINING] Discovered iron ore at (${oreBlock.position.x}, ${oreBlock.position.y}, ${oreBlock.position.z}). Harvesting vein...`);
+      const veinRes = await techniqueMineOreVein(bot, oreBlock, { maxCount: 16 }, ctx);
+      if (veinRes.status === 'success') {
+        totalMined += veinRes.details?.minedCount || 1;
+      }
+      try {
+        await techniqueVacuumDrops(bot, 3.5, ctx.abortSignal, ctx.isCurrent);
+      } catch {}
+
+      if (getIronCount() >= targetOreCount) {
+        break;
+      }
+      continue;
+    }
+
+    // B. If current Y > targetY, dig staircase steps downwards
+    const currentY = bot.entity ? Math.floor(bot.entity.position.y) : targetY;
+    if (currentY > targetY) {
+      const stepsToTake = Math.min(4, Math.max(1, currentY - targetY));
+      const stairRes = await techniqueMineStaircase(bot, stepsToTake, ctx.abortSignal, ctx.isCurrent);
+      if (stairRes.status !== 'success') {
+        // If staircase mining hit an obstruction or stopped, try turning 90 degrees
+        if (bot.entity) {
+          bot.entity.yaw = (bot.entity.yaw || 0) + Math.PI / 2;
+        }
+      }
+    } else {
+      // C. At or below target Y, explore horizontally to expose ore
+      const stairRes = await techniqueMineStaircase(bot, 2, ctx.abortSignal, ctx.isCurrent);
+      if (stairRes.status !== 'success') {
+        break;
+      }
+    }
+
+    // Check again for exposed ore
+    try {
+      await techniqueVacuumDrops(bot, 3.5, ctx.abortSignal, ctx.isCurrent);
+    } catch {}
+  }
+
+  const finalCount = getIronCount();
+  const netGain = finalCount - initialCount;
+
+  return {
+    status: finalCount >= targetOreCount || netGain > 0 ? 'success' : 'failed',
+    reason: `Staircase mined iron ore. Total iron acquired: ${netGain} (current inventory: ${finalCount}/${targetOreCount}).`,
+    details: {
+      netGain,
+      totalCount: finalCount,
+    },
+  };
+}
+
