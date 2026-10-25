@@ -1459,7 +1459,7 @@ export async function techniqueBuildShelter(
   abortSignal?: AbortSignal,
   isCurrent?: () => boolean
 ): Promise<ActionResult> {
-  const ctx: ActionExecutionContext = {
+  const ctx: Partial<ActionExecutionContext> = {
     bot,
     abortSignal,
     isCurrent: isCurrent || (() => !abortSignal?.aborted),

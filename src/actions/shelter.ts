@@ -351,7 +351,7 @@ export interface ShelterBuildOptions {
 export async function techniqueBuildVerifiedShelter(
   bot: Bot,
   options: ShelterBuildOptions = {},
-  ctx?: ActionExecutionContext
+  ctx?: Partial<ActionExecutionContext>
 ): Promise<ActionResult> {
   if (ctx && !isActionContextActive(ctx)) {
     return { status: 'interrupted', reason: 'Shelter construction cancelled before start.' };
