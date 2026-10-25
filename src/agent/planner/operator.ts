@@ -363,6 +363,99 @@ export const BASE_OPERATORS: IOperatorDefinition[] = [
     maxRetries: 2,
     buildParams: (count) => ({ item: 'bucket', count: Math.max(count, 1) }),
   },
+
+  // 16. Mine Diamond Ore
+  {
+    id: 'op_mine_diamond_ore',
+    name: 'Mine Diamond Ore',
+    actionName: 'collect_resource',
+    category: 'gather',
+    producedItems: [{ item: 'diamond', count: 1 }],
+    consumedItems: [],
+    requiredTools: [{ toolType: 'pickaxe', minTier: 3 }], // Requires iron pickaxe or higher
+    budgetMs: 120000,
+    maxRetries: 3,
+    buildParams: (count) => ({ resource: 'diamond', count: Math.max(count, 1) }),
+  },
+
+  // 17. Craft Diamond Pickaxe
+  {
+    id: 'op_craft_diamond_pickaxe',
+    name: 'Craft Diamond Pickaxe',
+    actionName: 'craft_item',
+    category: 'craft',
+    producedItems: [{ item: 'diamond_pickaxe', count: 1 }],
+    consumedItems: [
+      { item: 'diamond', count: 3 },
+      { item: 'stick', count: 2 },
+    ],
+    workstation: 'crafting_table',
+    budgetMs: 30000,
+    maxRetries: 2,
+    buildParams: (count) => ({ item: 'diamond_pickaxe', count: Math.max(count, 1) }),
+  },
+
+  // 18. Craft Diamond Sword
+  {
+    id: 'op_craft_diamond_sword',
+    name: 'Craft Diamond Sword',
+    actionName: 'craft_item',
+    category: 'craft',
+    producedItems: [{ item: 'diamond_sword', count: 1 }],
+    consumedItems: [
+      { item: 'diamond', count: 2 },
+      { item: 'stick', count: 1 },
+    ],
+    workstation: 'crafting_table',
+    budgetMs: 25000,
+    maxRetries: 2,
+    buildParams: (count) => ({ item: 'diamond_sword', count: Math.max(count, 1) }),
+  },
+
+  // 19. Harvest Obsidian
+  {
+    id: 'op_harvest_obsidian',
+    name: 'Harvest Obsidian',
+    actionName: 'collect_resource',
+    category: 'gather',
+    producedItems: [{ item: 'obsidian', count: 1 }],
+    consumedItems: [],
+    requiredTools: [{ toolType: 'pickaxe', minTier: 4 }], // Requires diamond pickaxe or higher
+    budgetMs: 150000,
+    maxRetries: 3,
+    buildParams: (count) => ({ resource: 'obsidian', count: Math.max(count, 1) }),
+  },
+
+  // 20. Dig Gravel for Flint
+  {
+    id: 'op_dig_flint',
+    name: 'Dig Gravel for Flint',
+    actionName: 'collect_resource',
+    category: 'gather',
+    producedItems: [{ item: 'flint', count: 1 }],
+    consumedItems: [],
+    requiredTools: [],
+    budgetMs: 60000,
+    maxRetries: 3,
+    buildParams: (count) => ({ resource: 'flint', count: Math.max(count, 1) }),
+  },
+
+  // 21. Craft Flint and Steel
+  {
+    id: 'op_craft_flint_and_steel',
+    name: 'Craft Flint and Steel',
+    actionName: 'craft_item',
+    category: 'craft',
+    producedItems: [{ item: 'flint_and_steel', count: 1 }],
+    consumedItems: [
+      { item: 'iron_ingot', count: 1 },
+      { item: 'flint', count: 1 },
+    ],
+    budgetMs: 20000,
+    maxRetries: 2,
+    buildParams: (count) => ({ item: 'flint_and_steel', count: Math.max(count, 1) }),
+  },
+
 ];
 
 export class OperatorRegistry {
