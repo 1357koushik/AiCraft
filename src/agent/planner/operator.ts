@@ -482,6 +482,20 @@ export const BASE_OPERATORS: IOperatorDefinition[] = [
     maxRetries: 2,
     buildParams: (count) => ({ item: 'blaze_powder', count: Math.max(count, 2) }),
   },
+
+  // 24. Hunt Enderman for Ender Pearls
+  {
+    id: 'op_hunt_enderman',
+    name: 'Hunt Enderman for Ender Pearls',
+    actionName: 'attack',
+    category: 'gather',
+    producedItems: [{ item: 'ender_pearl', count: 1 }],
+    consumedItems: [],
+    requiredTools: [],
+    budgetMs: 180000,
+    maxRetries: 3,
+    buildParams: (count) => ({ targetId: 'enderman', count: Math.max(count, 1) }),
+  },
 ];
 
 export class OperatorRegistry {

@@ -3,7 +3,7 @@
   "targetMinecraftVersion": "1.21.6",
   "targetProtocol": 771,
   "targetDataVersion": 4435,
-  "generatedAt": "2026-10-25T17:32:11.456Z",
+  "generatedAt": "2026-10-25T17:35:01.103Z",
   "coverageRule": "No action or technique may be designated as LIVE_PASS unless it ran against the real target server and its postconditions were independently confirmed against server-observer evidence (e.g. NDJSON observer log). Self-reported bot success is never an independent oracle.",
   "summary": {
     "totalRegisteredActions": 58,

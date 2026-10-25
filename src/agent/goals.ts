@@ -47,6 +47,7 @@ export function normalizeItemName(raw: string): string {
   if (['stone_sword'].includes(lower)) return 'stone_sword';
   if (['iron_sword'].includes(lower)) return 'iron_sword';
   if (['smelter', 'furnace'].includes(lower)) return 'furnace';
+  if (['pearl', 'pearls', 'ender_pearl', 'ender_pearls'].includes(lower)) return 'ender_pearl';
   return lower;
 }
 
