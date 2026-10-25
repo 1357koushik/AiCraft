@@ -7,6 +7,7 @@ import {
   verifyShelterEnclosure,
   techniqueBuildVerifiedShelter,
 } from '../src/actions/shelter.js';
+import { techniqueBuildShelter } from '../src/actions/techniques.js';
 import { ActionArbiter, ActionPriority } from '../src/agent/arbiter.js';
 import { ActionExecutionContext, Observation } from '../src/types/index.js';
 import { loadConfig } from '../src/config/index.js';
@@ -101,6 +102,11 @@ describe('Phase 4: Verified Shelter Blueprint & Closed-Loop Enclosure', () => {
       }),
       equip: vi.fn(async (item: any) => {
         mockBot.heldItem = item;
+      }),
+      canDigBlock: vi.fn(() => true),
+      dig: vi.fn(async (block: any) => {
+        const key = `${Math.floor(block.position.x)},${Math.floor(block.position.y)},${Math.floor(block.position.z)}`;
+        blockMap.set(key, { name: 'air', position: block.position, boundingBox: 'empty' });
       }),
       placeBlock: vi.fn(async (refBlock: any, faceVector: Vec3) => {
         const placedPos = refBlock.position.plus(faceVector);
@@ -443,6 +449,48 @@ describe('Phase 4: Verified Shelter Blueprint & Closed-Loop Enclosure', () => {
 
       arbiter.finishAction(action.actionId, action.epoch, mockBot);
       expect(mockBot.clearControlStates).toHaveBeenCalled();
+    });
+
+    it('techniqueBuildShelter delegates to verified enclosure builder and places all 23 blocks', async () => {
+      const startPos = new Vec3(40, 64, 40);
+      const { mockBot } = createMockBot({
+        inventory: [{ name: 'dirt', count: 32 }],
+        botPos: startPos,
+      });
+
+      const result = await techniqueBuildShelter(mockBot);
+
+      expect(result.status).toBe('success');
+      expect(result.reason).toContain('23 blocks placed');
+      expect(result.details?.inspection.isFullyEnclosed).toBe(true);
+      expect(result.details?.buildResult.blocksPlaced).toBe(23);
+      expect(result.details?.buildResult.expectedBlocks).toBe(23);
+    });
+
+    it('pre-clears foliage and soft vegetation in shelter footprint before block placement', async () => {
+      const startPos = new Vec3(50, 64, 50);
+      const { mockBot, blockMap } = createMockBot({
+        inventory: [{ name: 'cobblestone', count: 32 }],
+        botPos: startPos,
+      });
+
+      // Place tall grass at interior position (50, 64, 50) and doorway (50, 64, 51)
+      blockMap.set('50,64,50', { name: 'short_grass', position: new Vec3(50, 64, 50), boundingBox: 'empty' });
+      blockMap.set('50,64,51', { name: 'tall_grass', position: new Vec3(50, 64, 51), boundingBox: 'empty' });
+
+      const result = await techniqueBuildShelter(mockBot);
+
+      expect(result.status).toBe('success');
+      expect(mockBot.dig).toHaveBeenCalled();
+      expect(result.details?.buildResult.unobstructedInterior).toBe(true);
+      expect(result.details?.inspection.isFullyEnclosed).toBe(true);
+    });
+
+    it('includes entryOffset and torchOffset metadata on SURVIVAL_SHELTER_BLUEPRINT', () => {
+      expect(SURVIVAL_SHELTER_BLUEPRINT.dimensions).toEqual({ width: 3, height: 3, depth: 3 });
+      expect(SURVIVAL_SHELTER_BLUEPRINT.interiorOffset).toBeDefined();
+      expect(SURVIVAL_SHELTER_BLUEPRINT.entryOffset).toBeDefined();
+      expect(SURVIVAL_SHELTER_BLUEPRINT.torchOffset).toBeDefined();
     });
   });
 });

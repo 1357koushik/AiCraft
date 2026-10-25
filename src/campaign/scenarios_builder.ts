@@ -1037,8 +1037,8 @@ export function buildCampaignFamilies(): ActionFamilySuite[] {
           assertions: async (ctx, exec) => [
             {
               name: 'shelter_handled',
-              passed: exec.agentResult !== null,
-              expected: 'handled',
+              passed: exec.agentResult?.status === 'success',
+              expected: 'success',
               actual: exec.agentResult?.status,
               message: `Build shelter result: ${exec.agentResult?.reason}`,
             },
