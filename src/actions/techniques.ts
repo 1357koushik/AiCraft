@@ -1,11 +1,12 @@
 import { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { goals, Movements } from 'mineflayer-pathfinder';
-import { ActionResult } from '../types/index.js';
+import { ActionResult, ActionExecutionContext } from '../types/index.js';
 import { distance3D } from '../utils/math.js';
 import { navigationBlacklist } from './blacklist.js';
 import { workstationRegistry } from './workstations.js';
 import { ClosedLoopCraftingExecutor } from './crafting.js';
+import { techniqueBuildVerifiedShelter } from './shelter.js';
 
 export const SAFE_SCAFFOLD_ITEMS = new Set([
   'dirt',
@@ -1451,73 +1452,19 @@ export async function techniqueMineStaircase(
 
 /**
  * Technique: Build Simple Survival Shelter
- * Places a 3x3x3 dirt/cobblestone shelter with roof and door opening.
+ * Places a verified 3x3x3 dirt/cobblestone shelter with roof, doorway, and closed-loop enclosure verification.
  */
 export async function techniqueBuildShelter(
   bot: Bot,
   abortSignal?: AbortSignal,
   isCurrent?: () => boolean
 ): Promise<ActionResult> {
-  const center = bot.entity.position.floored();
-  let blocksPlaced = 0;
-
-  try {
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dz = -1; dz <= 1; dz++) {
-        for (let dy = 0; dy <= 2; dy++) {
-          if (abortSignal?.aborted || (isCurrent && !isCurrent())) {
-            return { status: 'interrupted', reason: 'Shelter construction cancelled by abort signal.' };
-          }
-
-          // Keep center open for bot interior
-          if (dx === 0 && dz === 0 && dy < 2) continue;
-          // Keep doorway open (front center)
-          if (dx === 0 && dz === 1 && (dy === 0 || dy === 1)) continue;
-
-          const targetPos = center.offset(dx, dy, dz);
-          const current = bot.blockAt(targetPos);
-          if (current && current.name === 'air') {
-            const scaffold = getScaffoldingItem(bot);
-            if (!scaffold) {
-              return {
-                status: blocksPlaced > 0 ? 'success' : 'failed',
-                reason: `Ran out of building materials after placing ${blocksPlaced} blocks.`,
-              };
-            }
-
-            const refBlock =
-              bot.blockAt(targetPos.offset(0, -1, 0)) ||
-              bot.blockAt(targetPos.offset(1, 0, 0)) ||
-              bot.blockAt(targetPos.offset(-1, 0, 0));
-
-            if (refBlock && refBlock.name !== 'air') {
-              if (abortSignal?.aborted || (isCurrent && !isCurrent())) {
-                return { status: 'interrupted', reason: 'Shelter construction cancelled before placement.' };
-              }
-              try {
-                await bot.equip(scaffold, 'hand');
-                if (abortSignal?.aborted || (isCurrent && !isCurrent())) {
-                  return { status: 'interrupted', reason: 'Shelter construction cancelled after equip.' };
-                }
-                await bot.placeBlock(refBlock, new Vec3(0, 1, 0));
-                blocksPlaced++;
-              } catch {}
-            }
-          }
-        }
-      }
-    }
-  } finally {
-    const isCancelled = Boolean(abortSignal?.aborted || (isCurrent && !isCurrent()));
-    if (!isCancelled) {
-      try {
-        bot.clearControlStates?.();
-        bot.deactivateItem?.();
-      } catch {}
-    }
-  }
-
-  return { status: 'success', reason: `Built shelter (${blocksPlaced} blocks placed).` };
+  const ctx: ActionExecutionContext = {
+    bot,
+    abortSignal,
+    isCurrent: isCurrent || (() => !abortSignal?.aborted),
+  };
+  return techniqueBuildVerifiedShelter(bot, {}, ctx);
 }
 
 /**

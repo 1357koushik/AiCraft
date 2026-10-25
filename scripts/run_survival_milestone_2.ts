@@ -349,15 +349,17 @@ async function runMilestone2() {
   // 10. Independent Oracle Verification
   const hasStonePickaxe = (finalInv['stone_pickaxe'] || 0) >= 1;
   const cobblestoneMinedObserved = stoneBreaks.length > 0 || (finalInv['cobblestone'] || 0) > (initialInv['cobblestone'] || 0);
-  const independentOracleVerified = hasStonePickaxe && agentBot.health > 0 && deathCount === 0;
+  const independentOracleVerified = hasStonePickaxe && agentBot.health > 0 && deathCount === 0 && shelterBlocksPlaced >= 23;
 
   const milestoneStatus = independentOracleVerified ? 'PASS' : pickaxeCrafted ? 'FAIL' : elapsedMs >= timeoutMs ? 'TIMEOUT' : 'FAIL';
   const statusReason = independentOracleVerified
-    ? 'Milestone 2 passed: autonomous cobblestone extraction with wooden pickaxe, stone pickaxe crafted, survival shelter constructed, and server-observed postconditions verified.'
+    ? 'Milestone 2 passed: autonomous cobblestone extraction with wooden pickaxe, stone pickaxe crafted, survival shelter constructed (23 blocks verified), and server-observed postconditions verified.'
     : deathCount > 0
     ? 'Bot died during Milestone 2 survival progression.'
     : !hasStonePickaxe
     ? 'Stone pickaxe not present in final inventory.'
+    : shelterBlocksPlaced < 23
+    ? `Shelter construction incomplete (only ${shelterBlocksPlaced}/23 blocks placed).`
     : 'Milestone 2 timed out before completion.';
 
   const report: MilestoneReport = {

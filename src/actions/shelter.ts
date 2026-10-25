@@ -20,7 +20,17 @@ export interface ShelterBlueprint {
   name: string;
   dimensions: { width: number; height: number; depth: number };
   interiorOffset: Vec3;
+  entryOffset?: Vec3;
+  torchOffset?: Vec3;
   blocks: BlueprintBlockSpec[];
+}
+
+export interface ShelterBuildResult {
+  success: boolean;
+  blocksPlaced: number;
+  expectedBlocks: number;
+  missingCoordinates: Vec3[];
+  unobstructedInterior: boolean;
 }
 
 /**
@@ -37,6 +47,8 @@ export const SURVIVAL_SHELTER_BLUEPRINT: ShelterBlueprint = {
   name: 'standard_survival_shelter_3x3',
   dimensions: { width: 3, height: 3, depth: 3 },
   interiorOffset: new Vec3(0, 0, 0),
+  entryOffset: new Vec3(0, 0, 1),
+  torchOffset: new Vec3(0, 1, -1),
   blocks: [
     // --- Layer 0: Lower Wall (Feet level) ---
     { relX: -1, relY: 0, relZ: -1, role: 'wall' },
@@ -299,7 +311,7 @@ export function verifyShelterEnclosure(
   } else if (!exteriorSafe) {
     reason = `Shelter physically enclosed, but immediate exterior threats detected: ${nearbyThreats.join(', ')}.`;
   } else {
-    reason = `Verified complete survival shelter enclosure (${wallPlaced} wall blocks, ${roofPlaced} roof blocks, interior clear, no immediate exterior threats).`;
+    reason = `Verified complete survival shelter enclosure (${wallPlaced + roofPlaced} blocks placed: ${wallPlaced} wall blocks, ${roofPlaced} roof blocks, interior clear, no immediate exterior threats).`;
   }
 
   return {
@@ -369,6 +381,28 @@ export async function techniqueBuildVerifiedShelter(
   }
 
   console.log(`[SHELTER_BUILD] Constructing verified survival shelter at (${anchorPos.x}, ${anchorPos.y}, ${anchorPos.z}) with ${bom.chosenMaterial}...`);
+
+  // Clear internal brush, vegetation, and soft obstructions in the 3x3x3 footprint
+  if (typeof bot.blockAt === 'function') {
+    for (const b of blueprint.blocks) {
+      const worldPos = anchorPos.offset(b.relX, b.relY, b.relZ);
+      const blk = bot.blockAt(worldPos);
+      if (blk && blk.name !== 'air' && blk.name !== 'cave_air') {
+        const isInteriorOrDoor = b.role === 'interior' || b.role === 'doorway';
+        const isSoftFoliage =
+          blk.boundingBox === 'empty' ||
+          ['short_grass', 'tall_grass', 'fern', 'large_fern', 'dead_bush', 'dandelion', 'poppy', 'vine', 'cave_vines'].includes(blk.name);
+        if (isInteriorOrDoor || isSoftFoliage) {
+          const canDig = typeof bot.canDigBlock === 'function' ? bot.canDigBlock(blk) : true;
+          if (canDig && typeof bot.dig === 'function') {
+            try {
+              await bot.dig(blk);
+            } catch {}
+          }
+        }
+      }
+    }
+  }
 
   // Sort blocks to build bottom-up: layer 0 walls first, then layer 1 walls, then layer 2 roof
   const blocksToBuild = blueprint.blocks
@@ -440,6 +474,14 @@ export async function techniqueBuildVerifiedShelter(
   // 3. Post-Construction Closed-Loop Enclosure Verification
   const finalInspection = verifyShelterEnclosure(bot, anchorPos, blueprint);
 
+  const buildResult: ShelterBuildResult = {
+    success: finalInspection.isFullyEnclosed,
+    blocksPlaced: finalInspection.placedCount,
+    expectedBlocks: finalInspection.totalBlueprintBlocks,
+    missingCoordinates: finalInspection.missingBlocks,
+    unobstructedInterior: finalInspection.interiorClear,
+  };
+
   if (!finalInspection.isFullyEnclosed) {
     return {
       status: 'failed',
@@ -447,6 +489,7 @@ export async function techniqueBuildVerifiedShelter(
       details: {
         placedInSession,
         inspection: finalInspection,
+        buildResult,
       },
     };
   }
@@ -457,6 +500,7 @@ export async function techniqueBuildVerifiedShelter(
     details: {
       placedInSession,
       inspection: finalInspection,
+      buildResult,
     },
   };
 }
