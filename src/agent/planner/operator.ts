@@ -496,6 +496,22 @@ export const BASE_OPERATORS: IOperatorDefinition[] = [
     maxRetries: 3,
     buildParams: (count) => ({ targetId: 'enderman', count: Math.max(count, 1) }),
   },
+
+  // 25. Craft Eye of Ender
+  {
+    id: 'op_craft_eye_of_ender',
+    name: 'Craft Eye of Ender',
+    actionName: 'craft_item',
+    category: 'craft',
+    producedItems: [{ item: 'ender_eye', count: 1 }],
+    consumedItems: [
+      { item: 'ender_pearl', count: 1 },
+      { item: 'blaze_powder', count: 1 },
+    ],
+    budgetMs: 15000,
+    maxRetries: 2,
+    buildParams: (count) => ({ item: 'ender_eye', count: Math.max(count, 1) }),
+  },
 ];
 
 export class OperatorRegistry {
