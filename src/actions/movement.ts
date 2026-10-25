@@ -6,6 +6,8 @@ import { distance3D } from '../utils/math.js';
 import { updatePathfinderMovements, techniquePillarUp, techniqueBridge, isMatchingResourceBlock } from './techniques.js';
 import { isActionContextActive } from '../agent/arbiter.js';
 import { navigateWithBounds, evaluateCandidateTarget, navigationBlacklist } from './navigator.js';
+import { globalExplorationGrid, ExplorationGrid } from './exploration/frontier.js';
+import { techniqueTraverseCaveBranch, techniquePlaceCaveTorch } from './exploration/cave_traversal.js';
 
 export const movementActions: ActionDef[] = [
   {
@@ -485,24 +487,24 @@ export const movementActions: ActionDef[] = [
               reason: `Discovered ${foodMob.name} nearby at (${foodMob.position.x.toFixed(0)}, ${foodMob.position.y.toFixed(0)}, ${foodMob.position.z.toFixed(0)})!`,
             };
           }
+        } else if (target === 'cave') {
+          return techniqueTraverseCaveBranch(bot, { autoTorch: true }, ctx);
         }
       }
 
-      // 2. Select directions to try
+      // 2. Select directions to try using frontier exploration when unguided
       const allDirs = ['north', 'east', 'south', 'west'];
       let candidateDirs: string[];
       if (params.direction && allDirs.includes(params.direction)) {
         candidateDirs = [params.direction, ...allDirs.filter((d) => d !== params.direction)];
       } else {
-        const yaw = bot.entity?.yaw ?? 0;
-        let normYaw = yaw % (2 * Math.PI);
-        if (normYaw < 0) normYaw += 2 * Math.PI;
-        const deg = (normYaw * 180) / Math.PI;
-        let facingDir = 'north';
-        if (deg >= 45 && deg < 135) facingDir = 'west';
-        else if (deg >= 135 && deg < 225) facingDir = 'south';
-        else if (deg >= 225 && deg < 315) facingDir = 'east';
-        candidateDirs = [facingDir, ...allDirs.filter((d) => d !== facingDir)];
+        // Frontier-guided target selection: computes vector towards nearest unmapped chunk
+        const botPos = bot.entity?.position ?? new Vec3(0, 64, 0);
+        const frontierTarget = globalExplorationGrid.getNextFrontier(botPos, target);
+        const dx = frontierTarget.x - botPos.x;
+        const dz = frontierTarget.z - botPos.z;
+        const frontierDir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'east' : 'west') : (dz > 0 ? 'south' : 'north');
+        candidateDirs = [frontierDir, ...allDirs.filter((d) => d !== frontierDir)];
       }
 
       let onAbort: (() => void) | null = null;
@@ -556,6 +558,19 @@ export const movementActions: ActionDef[] = [
           }
 
           if (navResult.success) {
+            // Update 2D chunk grid frontier and persistent memory
+            const currentPos = bot.entity.position;
+            const cx = ExplorationGrid.toChunkCoord(currentPos.x);
+            const cz = ExplorationGrid.toChunkCoord(currentPos.z);
+            globalExplorationGrid.markChunk(cx, cz, 'MAPPED');
+
+            if (ctx.memory?.recordExploredRegion) {
+              ctx.memory.recordExploredRegion(
+                { x: currentPos.x, z: currentPos.z },
+                (bot.game as any)?.dimension || 'overworld'
+              );
+            }
+
             // Scan what was discovered in the new area
             const discovered: string[] = [];
             if (bot.findBlock) {
@@ -563,10 +578,22 @@ export const movementActions: ActionDef[] = [
               if (nearbyTrees) discovered.push('trees');
               const nearbyStone = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'stone'), maxDistance: 32 });
               if (nearbyStone) discovered.push('stone');
-              const nearbyCoal = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'coal'), maxDistance: 32 });
-              if (nearbyCoal) discovered.push('coal ore');
-              const nearbyIron = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, 'iron'), maxDistance: 32 });
-              if (nearbyIron) discovered.push('iron ore');
+
+              for (const oreType of ['coal', 'iron', 'copper', 'gold', 'diamond']) {
+                const oreBlock = bot.findBlock({ matching: (b) => isMatchingResourceBlock(b.name, oreType), maxDistance: 32 });
+                if (oreBlock) {
+                  discovered.push(`${oreType} ore`);
+                  globalExplorationGrid.recordOre(oreBlock.name, oreBlock.position);
+                  if (ctx.memory?.recordResourceObservation) {
+                    ctx.memory.recordResourceObservation({
+                      type: oreBlock.name,
+                      position: { x: oreBlock.position.x, y: oreBlock.position.y, z: oreBlock.position.z },
+                      confidence: 1.0,
+                      provenance: 'frontier_exploration',
+                    });
+                  }
+                }
+              }
             }
 
             const sightedMobs = Object.values(bot.entities || {})

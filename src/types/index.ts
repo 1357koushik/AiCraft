@@ -266,12 +266,13 @@ export interface ExploredRegionRecord {
   dimension: string;
   lastVisitedAt: number;
   visitCount: number;
+  biome?: string;
 }
 
 export interface KnownLocationRecord {
   id: string;
   name: string;
-  type: 'base' | 'chest' | 'barrel' | 'crafting_table' | 'furnace' | 'shelter' | 'waypoint';
+  type: 'base' | 'chest' | 'barrel' | 'crafting_table' | 'furnace' | 'shelter' | 'waypoint' | 'landmark' | 'cave_entrance' | 'portal';
   position: { x: number; y: number; z: number };
   dimension: string;
   observedAt: number;
@@ -384,6 +385,7 @@ export interface ActionExecutionContext {
   actionId?: string;
   epoch?: number;
   isCurrent?: () => boolean;
+  memory?: any;
 }
 
 export interface ActionDef {

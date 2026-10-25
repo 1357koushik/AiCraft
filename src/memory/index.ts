@@ -381,9 +381,9 @@ export class MemoryManager {
 
   /**
    * 1. Records an explored chunk/region with bounded capacity (max 100).
-   * Coalesces repeated visits by updating lastVisitedAt and incrementing visitCount.
+   * Coalesces repeated visits by updating lastVisitedAt, incrementing visitCount, and updating biome.
    */
-  public recordExploredRegion(pos: { x: number; z: number }, dimension: string = 'overworld'): void {
+  public recordExploredRegion(pos: { x: number; z: number }, dimension: string = 'overworld', biome?: string): void {
     if (!this.memoryNotes.exploredRegions) this.memoryNotes.exploredRegions = [];
     const chunkX = Math.floor(pos.x / 16);
     const chunkZ = Math.floor(pos.z / 16);
@@ -396,6 +396,7 @@ export class MemoryManager {
     if (existing) {
       existing.lastVisitedAt = Date.now();
       existing.visitCount = (existing.visitCount || 1) + 1;
+      if (biome) existing.biome = biome;
     } else {
       if (this.memoryNotes.exploredRegions.length >= 100) {
         this.memoryNotes.exploredRegions.shift(); // Bound FIFO to 100
@@ -406,9 +407,27 @@ export class MemoryManager {
         dimension: dim,
         lastVisitedAt: Date.now(),
         visitCount: 1,
+        biome,
       });
     }
     this.saveToDisk();
+  }
+
+  /**
+   * Records a confirmed landmark or prominent terrain feature into persistent memory.
+   */
+  public recordLandmark(
+    name: string,
+    pos: { x: number; y: number; z: number },
+    type: KnownLocationRecord['type'] = 'landmark',
+    metadata?: Record<string, any>
+  ): void {
+    this.recordKnownLocation({
+      name,
+      type,
+      position: pos,
+      metadata,
+    });
   }
 
   public getExploredRegions(): ExploredRegionRecord[] {
