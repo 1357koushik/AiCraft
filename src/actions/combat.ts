@@ -4,6 +4,11 @@ import { distance3D } from '../utils/math.js';
 import { goals } from 'mineflayer-pathfinder';
 import { resolveAndValidateTarget } from '../safety/index.js';
 import { isActionContextActive } from '../agent/arbiter.js';
+import { techniqueTacticalCombat, getAttackCooldownMs } from './combat/mob_tactics.js';
+
+export { techniqueTacticalCombat, getAttackCooldownMs } from './combat/mob_tactics.js';
+export { raiseShieldAgainst, ensureShieldInOffHand, isShieldEquipped } from './combat/shield_manager.js';
+
 
 export const combatActions: ActionDef[] = [
   {
@@ -61,12 +66,21 @@ export const combatActions: ActionDef[] = [
         return { status: 'interrupted', reason: 'Attack cancelled before strike.' };
       }
 
+      const mobName = (rawEntity.name || '').toLowerCase();
+      const hasSpecialTactic = ['creeper', 'skeleton', 'stray', 'bogged', 'spider', 'cave_spider', 'enderman', 'zombie', 'husk', 'drowned'].includes(mobName);
+
+      if (params.tactical || hasSpecialTactic) {
+        return techniqueTacticalCombat(bot, rawEntity, ctx);
+      }
+
       try {
         await bot.lookAt(rawEntity.position.offset(0, rawEntity.height ? rawEntity.height / 2 : 1, 0), true);
         if (!isActionContextActive(ctx)) {
           return { status: 'interrupted', reason: 'Attack cancelled before strike.' };
         }
         bot.attack(rawEntity);
+        const cooldown = getAttackCooldownMs(bot.heldItem?.name);
+        await new Promise((res) => setTimeout(res, cooldown));
         return { status: 'success', reason: `Attacked ${targetObs.name} (${targetObs.type}).` };
       } catch (err: any) {
         if (!isActionContextActive(ctx)) {
