@@ -5,9 +5,10 @@ import { PlanCache, IPlanCacheEntry } from '../src/memory/plan_cache.js';
 import { MemoryManager } from '../src/memory/index.js';
 import { TaskPlan } from '../src/types/index.js';
 import { DeterministicGoalResolver } from '../src/agent/goals.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Phase 4: Persistent Memory and Validated Plan Reuse', () => {
-  const testDir = './data/test_memory_plan_cache';
+  const testDir = testOutputPath('test_memory_plan_cache');
 
   beforeEach(() => {
     if (!fs.existsSync(testDir)) {

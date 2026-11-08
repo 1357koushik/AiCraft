@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { logDir } from '../utils/paths.js';
 
 export interface DiagnosticSnapshot {
   timestamp: string;
@@ -139,7 +140,7 @@ export class MetricsAggregator {
 
   public saveDiagnosticsSnapshot(
     snapshot: DiagnosticSnapshot,
-    outputDir: string = 'logs/diagnostics'
+    outputDir: string = logDir('diagnostics')
   ): string {
     const resolvedDir = path.resolve(process.cwd(), outputDir);
     if (!fs.existsSync(resolvedDir)) {
@@ -214,7 +215,7 @@ export class MetricsAggregator {
 
   public saveSuiteReport(
     suiteReport: CampaignSuiteReport,
-    outputDir: string = 'logs/evaluation'
+    outputDir: string = logDir('evaluation')
   ): { jsonPath: string; markdownPath: string } {
     const resolvedDir = path.resolve(process.cwd(), outputDir);
     if (!fs.existsSync(resolvedDir)) {

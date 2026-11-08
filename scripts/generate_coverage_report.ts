@@ -6,8 +6,6 @@ function generateCoverageReport(): void {
   const scenariosDir = path.resolve(process.cwd(), 'logs/integration/scenarios');
   const provenancePath = path.join(campaignDir, 'PROVENANCE.json');
   const summaryJsonPath = path.join(campaignDir, 'CAMPAIGN_SUMMARY.json');
-  const artifactDir = 'C:\\Users\\a\\.gemini\\antigravity\\brain\\a2e3d296-708b-4039-b627-7e41e0c74dbd';
-  const artifactPath = path.join(artifactDir, 'LIVE_ACTION_COVERAGE_CAMPAIGN_REPORT.md');
 
   // 1. Aggregate all 17 family test results
   const familyFiles = fs.readdirSync(campaignDir)
@@ -232,11 +230,6 @@ function generateCoverageReport(): void {
           .map((g) => `- \`${g.actionId}\` (Family: \`${g.familyId}\`)`)
           .join('\n'),
   ].join('\n');
-
-  if (fs.existsSync(artifactDir)) {
-    fs.writeFileSync(artifactPath, md, 'utf8');
-    console.log(`>>> Updated User-Facing Artifact: ${artifactPath}`);
-  }
 
   const campaignMdPath = path.join(campaignDir, 'CAMPAIGN_SUMMARY.md');
   fs.writeFileSync(campaignMdPath, md, 'utf8');

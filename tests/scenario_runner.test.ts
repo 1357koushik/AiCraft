@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Vec3 } from 'vec3';
 import fs from 'fs';
 import path from 'path';
+import { testOutputPath } from './helpers/test_paths.js';
 import {
   IntegrationScenarioRunner,
   NoProgressWatchdog,
@@ -16,7 +17,7 @@ import {
 } from '../src/runner/index.js';
 
 describe('Integration Scenario Runner Subsystem', () => {
-  const testOutputDir = 'logs/test_integration/scenarios';
+  const testOutputDir = testOutputPath('test_integration', 'scenarios');
 
   beforeEach(() => {
     if (fs.existsSync(testOutputDir)) {

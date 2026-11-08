@@ -7,25 +7,16 @@ async function buildObserver(): Promise<void> {
   console.log('   BUILDING SERVER GROUND-TRUTH OBSERVER TOOLS & PLUGINS        ');
   console.log('================================================================');
 
-  // 1. Build Vanilla Observer (TypeScript spectator sidecar)
-  console.log('\n[1/2] Building Vanilla Observer (tools/vanilla-observer)...');
+  // 1. Vanilla Observer (TypeScript spectator sidecar). Scripts load its .ts sources through
+  // tsx, so this step only type-checks; it does not write .js files next to the sources.
+  console.log('\n[1/2] Type-checking Vanilla Observer (tools/vanilla-observer)...');
   const vanillaObserverDir = path.resolve(process.cwd(), 'tools/vanilla-observer');
   if (fs.existsSync(vanillaObserverDir)) {
     try {
-      execSync('npx tsc --project tools/vanilla-observer/tsconfig.json', {
-        stdio: 'inherit',
-      });
-      console.log('>>> Vanilla Observer built successfully.');
-    } catch {
-      // If no tsconfig.json in tools/vanilla-observer, compile with tsc directly
-      try {
-        execSync('npx tsc tools/vanilla-observer/*.ts --module NodeNext --target ES2022 --moduleResolution nodenext --skipLibCheck', {
-          stdio: 'inherit',
-        });
-        console.log('>>> Vanilla Observer compiled successfully.');
-      } catch (err: any) {
-        console.warn(`[WARN] Vanilla Observer TS build step notice: ${err.message}`);
-      }
+      execSync('npx tsc --project tools/vanilla-observer/tsconfig.json', { stdio: 'inherit' });
+      console.log('>>> Vanilla Observer type-check passed.');
+    } catch (err: any) {
+      console.warn(`[WARN] Vanilla Observer type-check reported errors: ${err.message}`);
     }
   }
 

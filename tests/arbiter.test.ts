@@ -5,6 +5,7 @@ import { miningBuildingActions } from '../src/actions/mining_building.js';
 import { combatActions } from '../src/actions/combat.js';
 import { metaActions } from '../src/actions/meta.js';
 import { techniqueMineStaircase } from '../src/actions/techniques.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('ActionArbiter & Cancellation Propagation', () => {
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -470,7 +471,7 @@ describe('ActionArbiter & Cancellation Propagation', () => {
       mockBot,
       testConfig,
       logger,
-      new MemoryManager('cleanup_test', './data_test_cleanup'),
+      new MemoryManager('cleanup_test', testOutputPath('data_test_cleanup')),
       new SafetyManager(testConfig),
       { generateDecision: vi.fn() } as any
     );

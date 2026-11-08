@@ -11,6 +11,7 @@ import { SafetyManager } from '../src/safety/index.js';
 import { ILLMProvider, LLMDecisionResponse } from '../src/types/index.js';
 import fs from 'fs';
 import path from 'path';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Phase 13: Broad Evaluation, Reliability Hardening & Multi-Seed Benchmarks', () => {
   describe('1. Metrics Aggregator & Failure Diagnostics Pipeline', () => {
@@ -116,7 +117,7 @@ describe('Phase 13: Broad Evaluation, Reliability Hardening & Multi-Seed Benchma
         failureReason: 'FALL_DAMAGE_FATALITY',
       };
 
-      const outDir = 'logs/diagnostics_test';
+      const outDir = testOutputPath('diagnostics_test');
       const savedPath = aggregator.saveDiagnosticsSnapshot(snapshot, outDir);
 
       expect(fs.existsSync(savedPath)).toBe(true);
@@ -131,29 +132,50 @@ describe('Phase 13: Broad Evaluation, Reliability Hardening & Multi-Seed Benchma
   });
 
   describe('2. Multi-Seed Survival Benchmark Evaluation Suite', () => {
-    it('executes full 10-seed survival evaluation meeting acceptance targets', async () => {
+    it('refuses to produce a benchmark without a runner that actually executes seeds', async () => {
+      const evaluator = new MultiSeedSurvivalEvaluator({ seeds: ['any_seed'], outputDir: testOutputPath('evaluation_test') });
+      await expect((evaluator as any).runBenchmarkSuite()).rejects.toThrow(/requires a runnerFn/);
+      await expect((evaluator as any).evaluateSeedRun('any_seed')).rejects.toThrow(/requires a runnerFn/);
+    });
+
+    it('aggregates exactly what the supplied runner reports, without inventing results', async () => {
       const evaluator = new MultiSeedSurvivalEvaluator({
         seeds: BENCHMARK_SEEDS,
         tickBudgetMs: 50,
         lagSpikeToleranceMs: 500,
-        outputDir: 'logs/evaluation_test',
+        outputDir: testOutputPath('evaluation_test'),
       });
 
       expect(BENCHMARK_SEEDS).toHaveLength(10);
 
-      const suiteReport = await evaluator.runBenchmarkSuite();
+      // Stub runner (mock data, not a live run): only the first seed reaches Iron Age, none reach the End.
+      const suiteReport = await evaluator.runBenchmarkSuite(async (seed, tracker) => {
+        tracker.reachMilestone('WOOD_AGE');
+        if (seed === BENCHMARK_SEEDS[0]) {
+          tracker.reachMilestone('STONE_AGE');
+          tracker.reachMilestone('IRON_AGE');
+        }
+        return { status: 'FAILED', failureReason: 'stub runner stops before the Nether' };
+      });
 
       expect(suiteReport.totalRuns).toBe(10);
-      // Acceptance Target: 100% Iron Age reach rate
-      expect(suiteReport.ironAgeSuccessRate).toBe(100);
-      // Acceptance Target: >= 70% Dragon Defeat success rate (9 of 10 succeeded in simulated progression = 90%)
-      expect(suiteReport.dragonDefeatSuccessRate).toBeGreaterThanOrEqual(70);
-      expect(suiteReport.successfulCompletions).toBeGreaterThanOrEqual(7);
-      expect(suiteReport.meanTimeToDragonDefeatMinutes).toBeGreaterThanOrEqual(0);
+      expect(suiteReport.ironAgeSuccessRate).toBe(10);
+      expect(suiteReport.dragonDefeatSuccessRate).toBe(0);
+      expect(suiteReport.successfulCompletions).toBe(0);
       expect(suiteReport.seedReports).toHaveLength(10);
 
+      // Failure diagnostics must not contain fabricated inventory or position data.
+      const failed = await new MultiSeedSurvivalEvaluator({ seeds: ['diag_seed'] }).evaluateSeedRun(
+        'diag_seed',
+        async () => ({ status: 'FAILED', failureReason: 'stub runner stops before the Nether' })
+      );
+      const diag = failed.diagnostics!;
+      expect(diag.failureReason).toBe('stub runner stops before the Nether');
+      expect(diag.inventory).toBeUndefined();
+      expect(diag.botPosition).toBeUndefined();
+
       // Verify files generated
-      const testDir = path.resolve(process.cwd(), 'logs/evaluation_test');
+      const testDir = testOutputPath('evaluation_test');
       expect(fs.existsSync(testDir)).toBe(true);
       const files = fs.readdirSync(testDir);
       expect(files.some((f) => f.endsWith('.json'))).toBe(true);

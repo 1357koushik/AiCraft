@@ -14,6 +14,7 @@ import { SafetyManager } from '../src/safety/index.js';
 import { AgentLogger } from '../src/utils/logger.js';
 import { validateActionParams } from '../src/prompt/schema.js';
 import { AvailabilityEngine } from '../src/actions/availability.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Goal/Task Execution Foundation (Phase 2, Layer 4)', () => {
   let arbiter: ActionArbiter;
@@ -402,7 +403,7 @@ describe('Goal/Task Execution Foundation (Phase 2, Layer 4)', () => {
 
       const config = loadConfig();
       config.agent.owners = ['LegitOwner'];
-      const memory = new MemoryManager('test_world_goals', './data_test_goals');
+      const memory = new MemoryManager('test_world_goals', testOutputPath('data_test_goals'));
 
       // Mock LLM that attempts to overwrite the goal
       const mockLLM = {

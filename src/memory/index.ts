@@ -15,6 +15,7 @@ import {
   StrategyRankingRecord,
 } from '../types/index.js';
 import { PlanCache, IPlanCacheEntry } from './plan_cache.js';
+import { dataDir as defaultDataDir } from '../utils/paths.js';
 
 export { PlanCache, IPlanCacheEntry };
 
@@ -170,7 +171,7 @@ export class MemoryManager {
   private agentState: AgentInternalState;
   public planCache: PlanCache = new PlanCache();
 
-  constructor(worldId: string = 'local_world', dataDir: string = './data') {
+  constructor(worldId: string = 'local_world', dataDir: string = defaultDataDir()) {
     // Sanitize worldId to strictly prevent path traversal while appending a hash to prevent world collisions
     const trimmedWorldId = String(worldId || '').trim();
     const rawWorldId = trimmedWorldId || 'local_world';

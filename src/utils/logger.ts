@@ -42,7 +42,7 @@ export class AgentLogger {
 
   constructor(config: AppConfig) {
     this.config = config;
-    const logDir = path.resolve(process.cwd(), config.logging.folder);
+    const logDir = path.resolve(process.cwd(), process.env.AICRAFT_LOG_DIR || config.logging.folder);
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });
     }

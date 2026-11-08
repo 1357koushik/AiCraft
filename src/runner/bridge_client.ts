@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { ObservedServerEvent, ServerObserverSnapshot } from './types.js';
+import { logDir } from '../utils/paths.js';
 
 export interface BridgeClientOptions {
   host?: string;
@@ -23,9 +24,9 @@ export class VanillaBridgeClient {
   constructor(options: BridgeClientOptions = {}) {
     this.host = options.host || '127.0.0.1';
     this.port = options.port || 25580;
-    this.tokenFile = path.resolve(process.cwd(), options.tokenFile || 'logs/integration/.bridge_token');
+    this.tokenFile = path.resolve(process.cwd(), options.tokenFile || logDir('integration', '.bridge_token'));
     this.token = options.token || '';
-    this.logDir = path.resolve(process.cwd(), options.logDir || 'logs/integration');
+    this.logDir = path.resolve(process.cwd(), options.logDir || logDir('integration'));
     this.timeoutMs = options.timeoutMs || 4000;
   }
 

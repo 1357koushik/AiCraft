@@ -3,9 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { MemoryManager } from '../src/memory/index.js';
 import { ActionPriority } from '../src/agent/arbiter.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Phase 5: Progression, Logistics & Bounded Memory Subsystem', () => {
-  const testDataDir = './data/test_phase5_memory';
+  const testDataDir = testOutputPath('test_phase5_memory');
 
   beforeEach(() => {
     vi.clearAllMocks();

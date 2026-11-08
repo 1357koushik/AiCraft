@@ -7,6 +7,7 @@ import { SafetyManager } from '../src/safety/index.js';
 import { MockLLMProvider } from '../src/llm/mock.js';
 import { AgentController } from '../src/agent/loop.js';
 import { ActionPriority } from '../src/agent/arbiter.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Agent Controller & Scenario Execution', () => {
   it('executes a scenario with MockLLMProvider and updates memory', async () => {
@@ -14,7 +15,7 @@ describe('Agent Controller & Scenario Execution', () => {
     config.logging.level = 'error'; // keep test output clean
     const logger = new AgentLogger(config);
     const worldId = `scenario_test_${Date.now()}_${Math.random()}`;
-    const memory = new MemoryManager(worldId, './data/test_memory');
+    const memory = new MemoryManager(worldId, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     // Create a mock bot with essential mineflayer properties
@@ -118,7 +119,7 @@ describe('Agent Controller & Scenario Execution', () => {
     config.logging.level = 'error';
     const logger = new AgentLogger(config);
     const worldId2 = `scenario_test2_${Date.now()}_${Math.random()}`;
-    const memory = new MemoryManager(worldId2, './data/test_memory');
+    const memory = new MemoryManager(worldId2, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     const mockApple = { type: 260, name: 'apple', count: 3 };
@@ -171,7 +172,7 @@ describe('Agent Controller & Scenario Execution', () => {
     const config = loadConfig();
     config.agent.maxActionsPerStep = 3;
     const logger = new AgentLogger(config);
-    const memory = new MemoryManager(`multi_${Date.now()}`, './data/test_memory');
+    const memory = new MemoryManager(`multi_${Date.now()}`, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     const mockBot: any = {
@@ -221,7 +222,7 @@ describe('Agent Controller & Scenario Execution', () => {
     const config = loadConfig();
     config.agent.maxActionsPerStep = 3;
     const logger = new AgentLogger(config);
-    const memory = new MemoryManager(`fail_${Date.now()}`, './data/test_memory');
+    const memory = new MemoryManager(`fail_${Date.now()}`, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     const mockBot: any = {
@@ -272,7 +273,7 @@ describe('Agent Controller & Scenario Execution', () => {
     const config = loadConfig();
     config.logging.level = 'error';
     const logger = new AgentLogger(config);
-    const memory = new MemoryManager(`disconnect_test_${Date.now()}`, './data/test_memory');
+    const memory = new MemoryManager(`disconnect_test_${Date.now()}`, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     let endCallback: (() => void) | null = null;
@@ -314,7 +315,7 @@ describe('Agent Controller & Scenario Execution', () => {
     const config = loadConfig();
     config.logging.level = 'error';
     const logger = new AgentLogger(config);
-    const memory = new MemoryManager(`collect_test_${Date.now()}`, './data/test_memory');
+    const memory = new MemoryManager(`collect_test_${Date.now()}`, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     const eventCallbacks: Record<string, Function> = {};
@@ -373,7 +374,7 @@ describe('Agent Controller & Scenario Execution', () => {
     const config = loadConfig();
     config.logging.level = 'error';
     const logger = new AgentLogger(config);
-    const memory = new MemoryManager(`mob_dead_test_${Date.now()}`, './data/test_memory');
+    const memory = new MemoryManager(`mob_dead_test_${Date.now()}`, testOutputPath('test_memory'));
     const safety = new SafetyManager(config);
 
     const eventCallbacks: Record<string, Function> = {};

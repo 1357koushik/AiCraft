@@ -6,6 +6,7 @@ import { metaActions } from '../src/actions/meta.js';
 import { AgentController } from '../src/agent/loop.js';
 import { AgentLogger } from '../src/utils/logger.js';
 import { MemoryManager } from '../src/memory/index.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Safety and Boundary System', () => {
   const config = loadConfig();
@@ -213,7 +214,7 @@ describe('Safety and Boundary System', () => {
         mockBot,
         testConfig,
         new AgentLogger(testConfig),
-        new MemoryManager('test_world', './data_test_safety'),
+        new MemoryManager('test_world', testOutputPath('data_test_safety')),
         new SafetyManager(testConfig),
         { generateDecision: vi.fn() } as any
       );
@@ -261,7 +262,7 @@ describe('Safety and Boundary System', () => {
 
       const testConfig = loadConfig();
       testConfig.agent.owners = ['LegitOwner'];
-      const memory = new MemoryManager('test_world_owner_chat', './data_test_safety');
+      const memory = new MemoryManager('test_world_owner_chat', testOutputPath('data_test_safety'));
       const mockLLM = {
         name: 'MockLLM',
         generateDecision: vi.fn().mockResolvedValue({

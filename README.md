@@ -1,5 +1,7 @@
 # Autonomous Minecraft AI Agent
 
+> For what currently works and how it was verified, see [STATUS.md](STATUS.md). This README is the project charter, not a status report.
+
 ## Project mission
 
 Build a genuinely autonomous Minecraft agent that can operate in a real Minecraft Java survival world, understand a goal, make a sensible plan, carry it out over many actions, verify what actually happened, recover from failures, and continue without needing an LLM decision for every small step.

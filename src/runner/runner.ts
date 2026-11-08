@@ -18,6 +18,7 @@ import {
 import { NoProgressWatchdog } from './watchdog.js';
 import { VanillaBridgeClient } from './bridge_client.js';
 import { saveScenarioReports } from './report.js';
+import { logDir } from '../utils/paths.js';
 
 export interface ScenarioRunnerOptions {
   config?: AppConfig;
@@ -68,7 +69,7 @@ export class IntegrationScenarioRunner {
     this.manifest = options.manifest || ACTION_CONTRACT_MANIFEST;
     this.bridgeClient = options.bridgeClient || new VanillaBridgeClient();
     this.fixtureOperator = options.fixtureOperator;
-    this.reportsDir = options.reportsDir || 'logs/integration/scenarios';
+    this.reportsDir = options.reportsDir || logDir('integration', 'scenarios');
     this.logger = options.logger || console;
   }
 

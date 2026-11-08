@@ -6,6 +6,7 @@ import { distance3D } from '../utils/math.js';
 import { isActionContextActive } from '../agent/arbiter.js';
 import { updatePathfinderMovements, techniqueVacuumDrops, techniqueMineStaircase } from './techniques.js';
 import { navigationBlacklist, NavigationFailureKind } from './blacklist.js';
+import { getInventoryCount } from './crafting.js';
 
 function toNavigationFailureKind(kind?: MiningFailureKind): NavigationFailureKind {
   if (kind === 'HAZARD_OBSTRUCTION') return 'HAZARD_OBSTRUCTION';
@@ -629,14 +630,14 @@ export async function techniqueGatherSurfaceResource(
     return { status: 'interrupted', reason: 'Surface gathering cancelled before start.' };
   }
 
-  const initialCount = countResourceInInventory(bot, resourceType);
+  const initialCount = countSurfaceResourceInInventory(bot, resourceType);
   const targetTotal = initialCount + count;
   const scanRadius = Math.max(48, ctx.config?.perception?.scanRadius || 32);
 
   let mined = 0;
   console.log(`[SURFACE_GATHER] Genuinely surface gathering for ${resourceType} x${count} (Y >= 50, open terrain, radius: ${scanRadius})...`);
 
-  while (countResourceInInventory(bot, resourceType) < targetTotal) {
+  while (countSurfaceResourceInInventory(bot, resourceType) < targetTotal) {
     if (!isActionContextActive(ctx)) {
       return { status: 'interrupted', reason: `Surface gathering cancelled (${mined} collected).` };
     }
@@ -697,7 +698,7 @@ export async function techniqueGatherSurfaceResource(
     }
 
     if (!targetBlock) {
-      const collectedSoFar = countResourceInInventory(bot, resourceType) - initialCount;
+      const collectedSoFar = countSurfaceResourceInInventory(bot, resourceType) - initialCount;
       if (collectedSoFar > 0) {
         return {
           status: 'success',
@@ -757,7 +758,7 @@ export async function techniqueGatherSurfaceResource(
     } catch {}
   }
 
-  const netCollected = countResourceInInventory(bot, resourceType) - initialCount;
+  const netCollected = countSurfaceResourceInInventory(bot, resourceType) - initialCount;
   return {
     status: 'success',
     reason: `Surface gathered ${netCollected} ${resourceType}.`,
@@ -765,7 +766,7 @@ export async function techniqueGatherSurfaceResource(
   };
 }
 
-function countResourceInInventory(bot: Bot, resource: string): number {
+function countSurfaceResourceInInventory(bot: Bot, resource: string): number {
   if (!bot || !bot.inventory) return 0;
   const items = typeof bot.inventory.items === 'function' ? bot.inventory.items() : [];
   let count = 0;
@@ -821,15 +822,6 @@ function findBestToolForSurfaceBlock(bot: Bot, blockName: string): any | null {
   return null;
 }
 
-function getInventoryCount(bot: Bot, itemName: string): number {
-  if (!bot || !bot.inventory) return 0;
-  const items = typeof bot.inventory.items === 'function' ? bot.inventory.items() : [];
-  let count = 0;
-  for (const it of items) {
-    if (it && it.name === itemName) count += it.count || 0;
-  }
-  return count;
-}
 
 /**
  * Technique: Staircase Mining for Iron Ore

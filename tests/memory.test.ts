@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { MemoryManager } from '../src/memory/index.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Memory and Goal Management', () => {
   it('records and retrieves named locations and facts', () => {
-    const memory = new MemoryManager('test_world', './data/test_memory');
+    const memory = new MemoryManager('test_world', testOutputPath('test_memory'));
     memory.rememberLocation('base', { x: 100, y: 70, z: -50 });
     memory.rememberFact('Creeper spotted near river');
     memory.setGoal('Build stone shelter', ['Collect cobblestone', 'Place foundation']);
@@ -17,7 +18,7 @@ describe('Memory and Goal Management', () => {
   });
 
   it('maintains rolling history within length limit', () => {
-    const memory = new MemoryManager('test_world', './data/test_memory');
+    const memory = new MemoryManager('test_world', testOutputPath('test_memory'));
     for (let i = 1; i <= 15; i++) {
       memory.addHistoryRecord({
         step: i,
@@ -33,7 +34,7 @@ describe('Memory and Goal Management', () => {
   });
 
   it('sanitizes worldId to strictly prevent path traversal', () => {
-    const memory = new MemoryManager('../../etc/shadow', './data/test_memory');
+    const memory = new MemoryManager('../../etc/shadow', testOutputPath('test_memory'));
     // Path traversal characters are replaced with underscores and suffixed with unique hash
     expect((memory as any).worldId).not.toContain('..');
     expect((memory as any).worldId).not.toContain('/');
@@ -41,9 +42,9 @@ describe('Memory and Goal Management', () => {
   });
 
   it('generates distinct storage file paths for different worlds with punctuation', () => {
-    const mem1 = new MemoryManager('world:1', './data/test_memory');
-    const mem2 = new MemoryManager('world?1', './data/test_memory');
-    const mem3 = new MemoryManager('world/1', './data/test_memory');
+    const mem1 = new MemoryManager('world:1', testOutputPath('test_memory'));
+    const mem2 = new MemoryManager('world?1', testOutputPath('test_memory'));
+    const mem3 = new MemoryManager('world/1', testOutputPath('test_memory'));
 
     expect((mem1 as any).filePath).not.toBe((mem2 as any).filePath);
     expect((mem1 as any).filePath).not.toBe((mem3 as any).filePath);
@@ -51,7 +52,7 @@ describe('Memory and Goal Management', () => {
   });
 
   it('bounds collections to prevent unbounded memory growth', () => {
-    const memory = new MemoryManager('bounds_world', './data/test_memory');
+    const memory = new MemoryManager('bounds_world', testOutputPath('test_memory'));
     for (let i = 0; i < 60; i++) {
       memory.rememberFact(`Observed detail ${i}`);
       memory.rememberLocation(`loc_${i}`, { x: i, y: 64, z: i });
@@ -66,18 +67,18 @@ describe('Memory and Goal Management', () => {
   });
 
   it('safely defaults empty or whitespace-only world identifier and verifies path containment', () => {
-    const memWhitespace = new MemoryManager('    ', './data/test_memory');
+    const memWhitespace = new MemoryManager('    ', testOutputPath('test_memory'));
     expect((memWhitespace as any).worldId).toContain('local_world_');
-    const dataDir = path.resolve(process.cwd(), './data/test_memory');
+    const dataDir = testOutputPath('test_memory');
     expect((memWhitespace as any).filePath.startsWith(dataDir)).toBe(true);
 
-    const memEmpty = new MemoryManager('', './data/test_memory');
+    const memEmpty = new MemoryManager('', testOutputPath('test_memory'));
     expect((memEmpty as any).worldId).toContain('local_world_');
     expect((memEmpty as any).filePath.startsWith(dataDir)).toBe(true);
   });
 
   it('safely migrates unhashed legacy memory files into hashed format without data loss', () => {
-    const dataDir = path.resolve(process.cwd(), './data/test_memory');
+    const dataDir = testOutputPath('test_memory');
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
     const legacyFile = path.join(dataDir, 'memory-legacy_world.json');
@@ -101,7 +102,7 @@ describe('Memory and Goal Management', () => {
     fs.writeFileSync(legacyFile, JSON.stringify(legacyData), 'utf-8');
 
     // Create memory manager with same world name
-    const mem = new MemoryManager('legacy_world', './data/test_memory');
+    const mem = new MemoryManager('legacy_world', testOutputPath('test_memory'));
     expect(mem.notes.namedLocations['spawn']).toEqual({ x: 0, y: 64, z: 0 });
     expect(mem.notes.facts).toContain('Migrated from old format');
     expect(mem.state.currentGoal).toBe('Legacy goal');
@@ -115,7 +116,7 @@ describe('Memory and Goal Management', () => {
 
   it('updates plan step progress deterministically based on inventory contents', () => {
     const worldId = `plan_test_world_${Date.now()}`;
-    const memory = new MemoryManager(worldId, './data/test_memory');
+    const memory = new MemoryManager(worldId, testOutputPath('test_memory'));
     expect(memory.state.planSteps[0].completed).toBe(false);
     expect(memory.state.planSteps[1].completed).toBe(false);
 
@@ -145,7 +146,7 @@ describe('Memory and Goal Management', () => {
 
   it('strictly enforces quantity thresholds and distinguishes prerequisites from task completion', () => {
     const worldId = `quantity_test_world_${Date.now()}`;
-    const memory = new MemoryManager(worldId, './data/test_memory');
+    const memory = new MemoryManager(worldId, testOutputPath('test_memory'));
 
     // Set an explicit plan: Step 1: Gather 8 cobblestone, Step 2: Craft 1 furnace
     memory.setGoal('Furnace construction', [
@@ -194,7 +195,7 @@ describe('Memory and Goal Management', () => {
 
   it('evaluates multi-item goals and tracks inventory consumption during crafting chains', () => {
     const worldId = `multi_item_craft_${Date.now()}`;
-    const memory = new MemoryManager(worldId, './data/test_memory');
+    const memory = new MemoryManager(worldId, testOutputPath('test_memory'));
 
     // Multi-item requirement: Craft stone pickaxe requiring 3 cobblestone and 2 sticks
     memory.setGoal('Gear progression', [

@@ -15,6 +15,7 @@ import { loadConfig } from '../src/config/index.js';
 import { MemoryManager } from '../src/memory/index.js';
 import { SafetyManager } from '../src/safety/index.js';
 import { AgentLogger } from '../src/utils/logger.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Milestone 1 Acceptance: Autonomous "gather 32 logs" Pipeline', () => {
   beforeEach(() => {
@@ -338,7 +339,7 @@ describe('Milestone 1 Acceptance: Autonomous "gather 32 logs" Pipeline', () => {
 
       const config = loadConfig();
       config.agent.owners = ['LegitOwner'];
-      const memory = new MemoryManager('test_world_gather_32', './data_test_gather_32');
+      const memory = new MemoryManager('test_world_gather_32', testOutputPath('data_test_gather_32'));
       const mockLLM = {
         name: 'MockLLM',
         generateDecision: vi.fn(), // Must NOT be called!
@@ -414,7 +415,7 @@ describe('Milestone 1 Acceptance: Autonomous "gather 32 logs" Pipeline', () => {
 
       const config = loadConfig();
       config.agent.owners = ['LegitOwner'];
-      const memory = new MemoryManager('test_world_gather_delta', './data_test_gather_delta');
+      const memory = new MemoryManager('test_world_gather_delta', testOutputPath('data_test_gather_delta'));
       const mockLLM = {
         name: 'MockLLM',
         generateDecision: vi.fn(),

@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import { ScenarioReport } from './types.js';
+import { logDir } from '../utils/paths.js';
 
 export function saveScenarioReports(
   report: ScenarioReport,
-  outputDir: string = 'logs/integration/scenarios'
+  outputDir: string = logDir('integration', 'scenarios')
 ): { jsonPath: string; markdownPath: string } {
   const resolvedDir = path.resolve(process.cwd(), outputDir);
   if (!fs.existsSync(resolvedDir)) {

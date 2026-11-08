@@ -184,7 +184,8 @@ async function main() {
 
   console.log('=== Step 4: Generating ACTION_CONTRACT_COVERAGE_REPORT.md ===');
   const md = generateMarkdownReport();
-  const reportPath = path.resolve(process.cwd(), 'ACTION_CONTRACT_COVERAGE_REPORT.md');
+  const reportPath = path.resolve(process.cwd(), 'logs/reports/ACTION_CONTRACT_COVERAGE_REPORT.md');
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, md, 'utf8');
   console.log(`Saved human-readable report to: ${reportPath} (${fs.statSync(reportPath).size} bytes)`);
 

@@ -12,6 +12,7 @@ import {
 import { movementActions } from '../src/actions/movement.js';
 import { MemoryManager } from '../src/memory/index.js';
 import { loadConfig } from '../src/config/index.js';
+import { testOutputPath } from './helpers/test_paths.js';
 
 describe('Phase 3: Exploration, Navigation, and Environmental Reasoning', () => {
   const config = loadConfig();
@@ -235,7 +236,7 @@ describe('Phase 3: Exploration, Navigation, and Environmental Reasoning', () => 
     });
 
     it('records visited regions and landmarks into MemoryManager', () => {
-      const memory = new MemoryManager(`test_explore_${Date.now()}`, './data/test_memory');
+      const memory = new MemoryManager(`test_explore_${Date.now()}`, testOutputPath('test_memory'));
 
       memory.recordExploredRegion({ x: 32, z: 48 }, 'overworld', 'savanna');
       expect(memory.isRegionExplored({ x: 32, z: 48 })).toBe(true);

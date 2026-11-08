@@ -1,4 +1,5 @@
 import { MetricsAggregator, SeedRunReport, CampaignSuiteReport, DiagnosticSnapshot } from '../runner/metrics_aggregator.js';
+import { logDir } from '../utils/paths.js';
 
 export const BENCHMARK_SEEDS = [
   '8675309', // Plains & Oak Forest baseline
@@ -43,6 +44,16 @@ export interface RunProgressTracker {
   setDiagnostics: (snapshot: Partial<DiagnosticSnapshot>) => void;
 }
 
+export type SeedRunnerFn = (seed: string, tracker: RunProgressTracker) => Promise<Partial<SeedRunReport>>;
+
+/**
+ * Aggregates results from a caller-supplied seed runner.
+ *
+ * This class does not run Minecraft itself. Its numbers are only as real as
+ * the runnerFn passed in: a runner that drives a live server produces live
+ * results, a runner backed by mocks produces mock results. There is no
+ * built-in default run.
+ */
 export class MultiSeedSurvivalEvaluator {
   private seeds: string[];
   private tickBudgetMs: number;
@@ -54,7 +65,7 @@ export class MultiSeedSurvivalEvaluator {
     this.seeds = options.seeds || BENCHMARK_SEEDS;
     this.tickBudgetMs = options.tickBudgetMs ?? 50;
     this.lagSpikeToleranceMs = options.lagSpikeToleranceMs ?? 500;
-    this.outputDir = options.outputDir || 'logs/evaluation';
+    this.outputDir = options.outputDir || logDir('evaluation');
     this.aggregator = options.metricsAggregator || new MetricsAggregator();
   }
 
@@ -62,10 +73,12 @@ export class MultiSeedSurvivalEvaluator {
     return this.aggregator;
   }
 
-  public async evaluateSeedRun(
-    seed: string,
-    runnerFn?: (seed: string, tracker: RunProgressTracker) => Promise<Partial<SeedRunReport>>
-  ): Promise<SeedRunReport> {
+  public async evaluateSeedRun(seed: string, runnerFn: SeedRunnerFn): Promise<SeedRunReport> {
+    if (typeof runnerFn !== 'function') {
+      throw new Error(
+        'MultiSeedSurvivalEvaluator requires a runnerFn that actually executes the seed. No simulated default exists.'
+      );
+    }
     const startTime = Date.now();
     const milestonesReached = new Set<SurvivalMilestone>();
     let botDeaths = 0;
@@ -90,16 +103,9 @@ export class MultiSeedSurvivalEvaluator {
     let failureReason: string | undefined = undefined;
 
     try {
-      if (runnerFn) {
-        runResult = await runnerFn(seed, tracker);
-        status = runResult.status || (milestonesReached.has('SAFE_RETURN') ? 'SUCCESS' : 'FAILED');
-        failureReason = runResult.failureReason;
-      } else {
-        // Default deterministic survival simulation across all milestones
-        const defaultRun = this.simulateProgression(seed, tracker);
-        status = defaultRun.status;
-        failureReason = defaultRun.failureReason;
-      }
+      runResult = await runnerFn(seed, tracker);
+      status = runResult.status || (milestonesReached.has('SAFE_RETURN') ? 'SUCCESS' : 'FAILED');
+      failureReason = runResult.failureReason;
     } catch (err: any) {
       status = 'FAILED';
       failureReason = err.message || 'Execution error';
@@ -113,18 +119,17 @@ export class MultiSeedSurvivalEvaluator {
 
     let diagnostics: DiagnosticSnapshot | undefined = undefined;
     if (status === 'FAILED' || botDeaths > 0) {
+      // Only record what the runner actually observed; leave unknown fields empty.
       diagnostics = {
         timestamp: new Date().toISOString(),
         seed,
         failureReason: failureReason || 'Unknown failure',
-        botPosition: diagnosticsPartial.botPosition || { x: 0, y: 64, z: 0 },
-        botVitals: diagnosticsPartial.botVitals || { health: botDeaths > 0 ? 0 : 20, food: 18, oxygen: 300 },
-        inventory: diagnosticsPartial.inventory || { cobblestone: 32, iron_ingot: 8 },
-        lastWorldEvents: diagnosticsPartial.lastWorldEvents || [
-          { type: 'tick', latencyMs: latencySamples.slice(-1)[0] ?? 12 },
-        ],
-        activeGoal: diagnosticsPartial.activeGoal || 'Survive and defeat Ender Dragon',
-        activeTask: diagnosticsPartial.activeTask || 'task_progression',
+        botPosition: diagnosticsPartial.botPosition,
+        botVitals: diagnosticsPartial.botVitals,
+        inventory: diagnosticsPartial.inventory,
+        lastWorldEvents: diagnosticsPartial.lastWorldEvents || [],
+        activeGoal: diagnosticsPartial.activeGoal,
+        activeTask: diagnosticsPartial.activeTask,
         pathfinderGoal: diagnosticsPartial.pathfinderGoal,
       };
       this.aggregator.saveDiagnosticsSnapshot(diagnostics);
@@ -149,9 +154,7 @@ export class MultiSeedSurvivalEvaluator {
     return report;
   }
 
-  public async runBenchmarkSuite(
-    runnerFn?: (seed: string, tracker: RunProgressTracker) => Promise<Partial<SeedRunReport>>
-  ): Promise<CampaignSuiteReport> {
+  public async runBenchmarkSuite(runnerFn: SeedRunnerFn): Promise<CampaignSuiteReport> {
     for (const seed of this.seeds) {
       await this.evaluateSeedRun(seed, runnerFn);
     }
@@ -159,74 +162,5 @@ export class MultiSeedSurvivalEvaluator {
     const suiteReport = this.aggregator.computeSuiteReport();
     this.aggregator.saveSuiteReport(suiteReport, this.outputDir);
     return suiteReport;
-  }
-
-  /**
-   * High-fidelity default benchmark simulation modeling standard Minecraft survival runs
-   * across diverse seeds, verifying milestone transitions, token spends, and safety recoveries.
-   */
-  private simulateProgression(
-    seed: string,
-    tracker: RunProgressTracker
-  ): { status: 'SUCCESS' | 'FAILED'; failureReason?: string } {
-    tracker.reachMilestone('SPAWN');
-    tracker.sampleTickLatency(8); // Tick planning latency well under 50ms budget
-
-    // Phase 0 & 1: Wood Age
-    tracker.reachMilestone('WOOD_AGE');
-    tracker.sampleTickLatency(12);
-
-    // Phase 0 & 1: Stone Age (Cobblestone tools & shelter)
-    tracker.reachMilestone('STONE_AGE');
-    tracker.sampleTickLatency(15);
-
-    // Phase 5: Iron Age (100% reach rate guaranteed across seeds)
-    tracker.reachMilestone('IRON_AGE');
-    tracker.recordTokens(320); // Minimal LLM tokens for strategic macro goals
-    tracker.recordLlmCall();
-
-    // Specific seed hazards or challenges
-    if (seed === '987654321') {
-      // Badlands / Mesa: Challenging steep ravine or cave
-      tracker.recordDeath();
-      tracker.setDiagnostics({
-        botPosition: { x: 120, y: 38, z: -400 },
-        failureReason: 'Steep badlands canyon fall hazard during cave entrance',
-      });
-      // Respawns and recovers via bed checkpoint
-    }
-
-    // Phase 7: Diamond Age & Obsidian
-    tracker.reachMilestone('DIAMOND_AGE');
-    tracker.sampleTickLatency(14);
-
-    // Phase 8 & 9: Nether Portal & Fortress Blazes
-    tracker.reachMilestone('NETHER_PORTAL');
-    tracker.reachMilestone('NETHER_FORTRESS');
-    tracker.recordTokens(450);
-    tracker.recordLlmCall();
-
-    // Island seed edge-case: If ocean island lacks fortress proximity in bounded radius
-    if (seed === '123456789') {
-      // In seed 123456789, simulated ocean fortress search timeout
-      tracker.setDiagnostics({
-        botPosition: { x: -800, y: 52, z: 1200 },
-        activeGoal: 'Locate Nether Fortress',
-        failureReason: 'LAVA_SEA_EXTENDED_NAVIGATION_TIMEOUT',
-      });
-      return { status: 'FAILED', failureReason: 'LAVA_SEA_EXTENDED_NAVIGATION_TIMEOUT' };
-    }
-
-    // Phase 10: Ender Pearls
-    tracker.reachMilestone('ENDER_PEARL');
-
-    // Phase 11: Stronghold discovery & activation
-    tracker.reachMilestone('STRONGHOLD');
-
-    // Phase 12: The End & Ender Dragon defeat
-    tracker.reachMilestone('ENDER_DRAGON');
-    tracker.reachMilestone('SAFE_RETURN');
-
-    return { status: 'SUCCESS' };
   }
 }

@@ -548,7 +548,7 @@ function getGenericToolTier(toolName: string): number {
 /**
  * Policy Statement on Fall Mitigation & Water-Bucket Clutch Maneuvers:
  *
- * In accordance with MINECRAFT_AI_MASTER_BLUEPRINT_v2.md:
+ * Policy:
  * - Water-bucket clutch maneuvers are DEFERRED and DISABLED by default.
  * - Primary safety relies on route-aware pathfinding (avoiding fatal cliff edges > 3 blocks),
  *   unsupported floor detection, and physical retreat.

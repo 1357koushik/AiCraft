@@ -1,7 +1,6 @@
 import { AppConfig } from '../config/index.js';
 import { ILLMProvider } from '../types/index.js';
-import { LMStudioProvider } from './lmstudio.js';
-import { OpenAIProvider } from './openai.js';
+import { LMStudioProvider, OpenAIProvider } from './openai_compatible.js';
 import { AnthropicProvider } from './anthropic.js';
 import { MockLLMProvider } from './mock.js';
 
@@ -34,6 +33,5 @@ export function createLLMProvider(config: AppConfig, logger: any): ILLMProvider 
 
 export * from './parser.js';
 export * from './mock.js';
-export * from './lmstudio.js';
-export * from './openai.js';
+export * from './openai_compatible.js';
 export * from './anthropic.js';
