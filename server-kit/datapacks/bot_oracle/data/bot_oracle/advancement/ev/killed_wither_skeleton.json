@@ -1,0 +1,1 @@
+{"criteria":{"c":{"trigger":"minecraft:player_killed_entity","conditions":{"entity":{"type":"minecraft:wither_skeleton"}}}},"rewards":{"function":"bot_oracle:ev/killed_wither_skeleton"}}

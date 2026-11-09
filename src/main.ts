@@ -68,14 +68,23 @@ async function main() {
             llmProvider
           );
 
-          // Initialize console dashboard
-          dashboard = new ConsoleDashboard(agentController, memory, connection, logger);
-          dashboard.startCLI();
+          // Console dashboard reads stdin; skip it when run headless (e.g. by the task harness).
+          if (process.env.AGENT_HEADLESS !== '1') {
+            dashboard = new ConsoleDashboard(agentController, memory, connection, logger);
+            dashboard.startCLI();
+          }
 
           // Start agent loop
           agentController.start().catch((err) => {
             logger.error({ err }, `Agent loop terminated with error: ${err.message}`);
           });
+
+          // Optional startup task, treated as an owner instruction.
+          const startupGoal = process.env.AGENT_GOAL?.trim();
+          if (startupGoal) {
+            const controller = agentController;
+            setTimeout(() => controller.submitOwnerInstruction(startupGoal, 'AGENT_GOAL'), 2000);
+          }
         } else {
           // Subsequent connection (reconnect): rebind existing controller cleanly
           agentController.updateBotInstance(connectedBot);

@@ -213,7 +213,7 @@ Adding a new kind of request means adding a **task type**: a typed spec, a plann
     - `item_used_on_block`, `enter_block`, `consume_item`, `player_interacted_with_entity` (bartering), `slept_in_bed`
   - **Each event carries** player, dimension, x/y/z, game tick, and an item or entity ID where the trigger allows it.
   - **Scoreboards:** deaths, plus mined/crafted/killed counters for tracked items, created on load.
-  - **A 1 Hz heartbeat** function that logs position, health and dimension for the bot **and every owner**, so the timeline has server-side positions. "Follow me" and "come here" are judged from these.
+  - **Positions over time** for the bot and every owner come from RCON polling (built in Phase 0), not a datapack heartbeat. Datapack `say` lines also reach every player's chat, so a 1 Hz heartbeat would spam a human owner. RCON reads appear in neither chat nor the server log. "Follow me" and "come here" are judged from these snapshots.
 - `server.properties` templates:
   - **test:** RCON on, `pause-when-empty-seconds=0`, fixed seed, `white-list=true`, `spawn-protection=0`
   - **survival-benchmark:** normal difficulty, no cheats, random or fixed seed
@@ -356,7 +356,23 @@ Note: `say` messages also reach every player's chat. The agent's chat handler mu
 
 Every phase closes with **live, server-judged** acceptance tests. A phase isn't done because its code exists.
 
-### Phase 0: Server kit and oracle (1 week)
+### Phase 0: Server kit and oracle (1 week) · **done 2026-11-09**
+
+What was built:
+- `server-kit/`: the `bot_oracle` datapack and the server properties template
+- `src/oracle/`: RCON client, log parser, file readers, probes, expectations, session
+- `src/harness/`: an isolated server instance in `runtime/server/` and the task runner
+- `npm run task`
+
+Verified live:
+- wooden pickaxe: PASS
+- stone pickaxe: FAIL (a crafting desync, now the first Phase 3 item)
+- a `/give` mid-run gives ASSISTED
+- a `/kill` mid-run is counted as a death
+
+Moved to later phases: the survival-benchmark properties template, checkpoint-world saving, and a separate observer account (none is needed, since RCON reads replace a logged-in observer).
+
+Original plan:
 - Build `server-kit/` and `src/oracle/` from the prototype tested today (section 4).
 - Write `npm run task -- "<text>" --seed N`, which produces a server-judged verdict and a run folder.
 - **Clean up:**

@@ -1,0 +1,10 @@
+{
+  "id": "wooden_pickaxe",
+  "text": "craft a wooden pickaxe",
+  "seed": "20261109",
+  "timeoutSec": 420,
+  "expect": {
+    "inventory": { "wooden_pickaxe": ">=1" },
+    "stats": { "crafted:wooden_pickaxe": ">=1" }
+  }
+}

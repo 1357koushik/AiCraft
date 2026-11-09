@@ -195,23 +195,39 @@ describe('Phase 12: Ender Dragon Combat and Safe Return', () => {
       expect(found?.equals(exitPos)).toBe(true);
     });
 
-    it('navigates into Exit Portal confirming campaign victory', async () => {
-      const setControlSpy = vi.fn();
+    it('reports success only once the dimension actually changes', async () => {
       const mockBot: any = {
+        game: { dimension: 'the_end' },
         findBlock: vi.fn().mockReturnValue({ name: 'end_portal', position: CENTRAL_EXIT_PORTAL }),
-        pathfinder: {
-          goto: vi.fn().mockResolvedValue(undefined),
-        },
+        pathfinder: { goto: vi.fn().mockResolvedValue(undefined) },
         lookAt: vi.fn().mockResolvedValue(undefined),
-        setControlState: setControlSpy,
+        setControlState: vi.fn((control: string, state: boolean) => {
+          if (control === 'forward' && state) setTimeout(() => (mockBot.game.dimension = 'overworld'), 50);
+        }),
       };
 
       const ctx: any = { config, logger, isCurrent: () => true };
-      const res = await techniqueEnterExitPortal(mockBot, ctx);
+      const res = await techniqueEnterExitPortal(mockBot, ctx, { timeoutMs: 2000 });
 
       expect(res.status).toBe('success');
-      expect(res.details?.victory).toBe(true);
-      expect(setControlSpy).toHaveBeenCalledWith('forward', true);
+      expect(res.details?.dimension).toBe('overworld');
+      expect(res.details?.victory).toBeUndefined();
+    });
+
+    it('fails when walking toward the portal does not change dimension', async () => {
+      const mockBot: any = {
+        game: { dimension: 'the_end' },
+        findBlock: vi.fn().mockReturnValue({ name: 'end_portal', position: CENTRAL_EXIT_PORTAL }),
+        pathfinder: { goto: vi.fn().mockResolvedValue(undefined) },
+        lookAt: vi.fn().mockResolvedValue(undefined),
+        setControlState: vi.fn(),
+      };
+
+      const ctx: any = { config, logger, isCurrent: () => true };
+      const res = await techniqueEnterExitPortal(mockBot, ctx, { timeoutMs: 300 });
+
+      expect(res.status).toBe('failed');
+      expect(res.details?.failureKind).toBe('POSTCONDITION_FAILED');
     });
   });
 });

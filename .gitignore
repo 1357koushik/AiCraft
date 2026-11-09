@@ -25,3 +25,6 @@ target/
 .env
 .env.*
 
+
+# Harness server instance (worlds, logs, RCON password)
+runtime/

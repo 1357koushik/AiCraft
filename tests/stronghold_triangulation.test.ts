@@ -163,6 +163,25 @@ describe('Phase 11: Stronghold Discovery and End Portal Activation', () => {
       expect(res.details?.filled).toBe(1);
       expect(activateSpy).toHaveBeenCalled();
     });
+
+    it('fails when no end_portal block appears after filling frames', async () => {
+      const mockFrames = [{ name: 'end_portal_frame', position: new Vec3(2, 0, 0), _properties: { eye: false } }];
+      const mockBot: any = {
+        findBlocks: vi.fn().mockReturnValue(mockFrames.map((f) => f.position)),
+        blockAt: vi.fn().mockImplementation((pos: Vec3) => mockFrames.find((f) => f.position.equals(pos))),
+        findBlock: vi.fn().mockReturnValue(null),
+        inventory: { items: () => [{ name: 'ender_eye', count: 4 }] },
+        equip: vi.fn().mockResolvedValue(undefined),
+        activateBlock: vi.fn().mockResolvedValue(undefined),
+        lookAt: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const ctx: any = { config, logger, isCurrent: () => true };
+      const res = await activateEndPortal(mockBot, new Vec3(0, 0, 0), ctx);
+
+      expect(res.status).toBe('failed');
+      expect(res.details?.portalActive).toBe(false);
+    });
   });
 
   // =========================================================================

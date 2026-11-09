@@ -5,7 +5,6 @@
   "main": "dist/main.js",
   "scripts": {
     "start": "tsx src/main.ts",
-    "auto": "tsx src/automation.ts",
     "dev": "tsx watch src/main.ts",
     "build": "tsc",
     "test": "vitest run",
@@ -15,7 +14,6 @@
     "observer:build": "tsx scripts/build_observer.ts",
     "test:live": "tsx scripts/run_live_scenarios.ts",
     "test:campaign": "tsx scripts/run_campaign.ts",
-    "report:coverage": "tsx scripts/generate_coverage_report.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "milestone": "tsx scripts/run_milestone.ts",
@@ -24,7 +22,8 @@
     "inspect:world": "tsx scripts/inspect_world.ts",
     "manifest:generate": "tsx scripts/generate_contract_artifacts.ts",
     "manifest:reconcile": "tsx scripts/reconcile_evidence.ts",
-    "audit:scenarios": "tsx scripts/audit_scenarios.ts"
+    "audit:scenarios": "tsx scripts/audit_scenarios.ts",
+    "task": "tsx scripts/run_task.ts"
   },
   "keywords": [
     "minecraft",

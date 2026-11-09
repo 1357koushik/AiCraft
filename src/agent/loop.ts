@@ -636,6 +636,8 @@ export class AgentController {
     // Chat messages (owner instructions & untrusted player chat)
     this.addBotListener('chat', (username: string, message: string) => {
       if (username === this.bot.username) return;
+      // Lines from the bot_oracle judging datapack are for the harness only, never instructions or perception.
+      if (message.includes('[oracle]')) return;
 
       const isOwner = this.config.agent.owners.includes(username);
       this.logger.info(`[Chat] <${username}> ${message} (isOwner: ${isOwner})`);
@@ -651,18 +653,7 @@ export class AgentController {
       if (isOwner && (sanitized.startsWith('!') || sanitized.startsWith('/'))) {
         this.handleOwnerChatCommand(sanitized);
       } else if (isOwner) {
-        this.memory.state.pendingOwnerInstruction = sanitized;
-        this.memory.setGoal(sanitized, undefined, true);
-        this.logger.info(`Owner instruction received: "${sanitized}". Updated active goal.`);
-
-        const invCounts = getBotInventoryCounts(this.bot);
-        const goalSpec = parseAndValidateGoalSpec(sanitized, invCounts, true);
-        if (goalSpec) {
-          const res = this.taskExecutor.setGoal(goalSpec, invCounts);
-          if (res.accepted && this.taskExecutor.activePlan) {
-            this.syncPlanStepsWithMemory();
-          }
-        }
+        this.submitOwnerInstruction(sanitized, `chat:${username}`);
       }
     });
 
@@ -835,6 +826,27 @@ export class AgentController {
     if (this.bot && typeof this.bot.on === 'function') {
       this.bot.on(event as any, listener);
       this.boundListeners.push({ event, listener });
+    }
+  }
+
+  /**
+   * Gives the agent an owner instruction, exactly as if a trusted owner typed it in chat.
+   * Used by owner chat, the startup goal (AGENT_GOAL) and the task harness.
+   */
+  public submitOwnerInstruction(text: string, source = 'api'): void {
+    const sanitized = text.trim();
+    if (!sanitized) return;
+    this.memory.state.pendingOwnerInstruction = sanitized;
+    this.memory.setGoal(sanitized, undefined, true);
+    this.logger.info(`Owner instruction received from ${source}: "${sanitized}". Updated active goal.`);
+
+    const invCounts = getBotInventoryCounts(this.bot);
+    const goalSpec = parseAndValidateGoalSpec(sanitized, invCounts, true);
+    if (goalSpec) {
+      const res = this.taskExecutor.setGoal(goalSpec, invCounts);
+      if (res.accepted && this.taskExecutor.activePlan) {
+        this.syncPlanStepsWithMemory();
+      }
     }
   }
 

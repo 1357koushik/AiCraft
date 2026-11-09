@@ -176,6 +176,25 @@ For important changes, use before-and-after measurements under comparable condit
 
 Explicitly state when a Minecraft server or other required environment was unavailable. Separate automated test results from live verification.
 
+**Server-judged task runs.** `npm run task` gives the real agent one task on a fresh, seeded world and judges it using only server-side evidence: RCON reads, the `bot_oracle` datapack's event log, the server log, and the world's stats and advancement files.
+
+```bash
+npm run task -- tasks/stone_pickaxe.json
+npm run task -- "craft a wooden pickaxe" --seed 42 --timeout 5m --expect-item "wooden_pickaxe>=1"
+```
+
+Quote any argument that contains `>` or `<`, otherwise the shell treats it as a redirect.
+
+- **What it needs:** Java 21+ (set `HARNESS_JAVA` if `java` is older), and `server/server.jar` with `eula=true` in `server/eula.txt`.
+- **Where the server runs:** a separate instance in `runtime/server/`, so `server/` and its settings are never changed. Stop any other server on port 25565 first.
+- **Verdict:** each run writes `logs/runs/<runId>/` containing `verdict.md`, `verdict.json`, `timeline.ndjson`, `server.log` and the agent's output. The verdict is one of:
+  - `PASS`: every expectation confirmed by the server, no commands used
+  - `ASSISTED`: expectations met, but a command changed the game during the run
+  - `FAIL`
+  - `UNVERIFIED`: no checkable expectations were given
+  - `ERROR`
+- **Task files:** `tasks/*.json` set `text`, `seed`, `timeoutSec` and `expect` (`inventory`, `advancements`, `stats`, `dimension`, `maxDeaths`).
+
 ### Step 7 — Update the project knowledge
 
 Update documentation only to reflect behavior actually implemented and verified. Mark proposed work separately from completed work. Preserve reusable research findings, rejected approaches, test scenarios, and measured outcomes so future agents do not repeat the same investigation.

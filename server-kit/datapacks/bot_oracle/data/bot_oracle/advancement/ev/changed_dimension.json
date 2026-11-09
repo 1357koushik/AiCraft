@@ -1,0 +1,1 @@
+{"criteria":{"c":{"trigger":"minecraft:changed_dimension"}},"rewards":{"function":"bot_oracle:ev/changed_dimension"}}

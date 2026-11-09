@@ -116,12 +116,24 @@ export async function activateEndPortal(
     ? bot.findBlock({ matching: (b: any) => b.name === 'end_portal', maxDistance: 5 })
     : null;
 
+  if (!portalBlock) {
+    return {
+      status: 'failed',
+      reason: `Tried ${filled} frame block(s), but no end_portal block appeared, so the portal is not active.`,
+      details: {
+        filled,
+        portalActive: false,
+        failureKind: 'POSTCONDITION_FAILED',
+      },
+    };
+  }
+
   return {
     status: 'success',
-    reason: `Inserted Eyes of Ender into ${filled} frame block(s). End Portal is now active!`,
+    reason: `Inserted Eyes of Ender into ${filled} frame block(s); end_portal blocks are present.`,
     details: {
       filled,
-      portalActive: Boolean(portalBlock),
+      portalActive: true,
     },
   };
 }

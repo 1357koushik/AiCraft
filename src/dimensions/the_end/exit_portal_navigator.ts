@@ -24,7 +24,8 @@ export function findExitPortal(bot: Bot): Vec3 | null {
  */
 export async function techniqueEnterExitPortal(
   bot: Bot,
-  ctx: ActionExecutionContext
+  ctx: ActionExecutionContext,
+  options: { timeoutMs?: number } = {}
 ): Promise<ActionResult> {
   if (!isActionContextActive(ctx)) {
     return { status: 'interrupted', reason: 'Exit portal navigation cancelled before start.' };
@@ -40,20 +41,37 @@ export async function techniqueEnterExitPortal(
     } catch {}
   }
 
-  // Walk directly into the portal block
+  // Walk into the portal and wait for the server to move the bot to another dimension.
+  const startDimension = (bot as any).game?.dimension;
   if (bot.lookAt) {
     await bot.lookAt(portalPos, true);
   }
   bot.setControlState('forward', true);
-  await new Promise((res) => setTimeout(res, 600));
+  const deadline = Date.now() + (options.timeoutMs ?? 10000);
+  let changed = false;
+  while (Date.now() < deadline) {
+    if ((bot as any).game?.dimension !== startDimension) {
+      changed = true;
+      break;
+    }
+    await new Promise((res) => setTimeout(res, 100));
+  }
   bot.setControlState('forward', false);
+
+  if (!changed) {
+    return {
+      status: 'failed',
+      reason: `Walked toward the exit portal, but the bot is still in ${startDimension ?? 'the same dimension'}.`,
+      details: { portalCoordinates: portalPos, failureKind: 'POSTCONDITION_FAILED' },
+    };
+  }
 
   return {
     status: 'success',
-    reason: 'Stepped into the Exit Portal! Ender Dragon defeated, campaign complete, returning to Overworld.',
+    reason: `Entered the exit portal; the bot is now in ${(bot as any).game?.dimension}.`,
     details: {
       portalCoordinates: portalPos,
-      victory: true,
+      dimension: (bot as any).game?.dimension,
     },
   };
 }

@@ -1,0 +1,6 @@
+{
+  "pack": {
+    "pack_format": 80,
+    "description": "bot_oracle: server-side event log for judging agent runs (Minecraft 1.21.6)"
+  }
+}
