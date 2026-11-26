@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import type { Bot } from 'mineflayer';
-import { goals } from 'mineflayer-pathfinder';
 import { getAllRecipesForItem } from '../actions/crafting.js';
 import { craftReliably, CraftError } from '../actions/reliable_craft.js';
-import { findSafePlacementSpot, updatePathfinderMovements } from '../actions/techniques.js';
-import { Precondition, SkillContext, SkillDefinition, SkillOutcome, ProgressWatchdog } from './contract.js';
+import { findSafePlacementSpot } from '../actions/techniques.js';
+import { Precondition, SkillContext, SkillDefinition, SkillOutcome } from './contract.js';
+import { resolveTag } from '../knowledge/vanilla.js';
+import { goTo, GoalReachBlock, eyeDistance } from './world.js';
 
 /**
  * craft: make `count` more of one item from ingredients the bot already holds.
@@ -72,7 +73,22 @@ function hasTableItem(bot: Bot): boolean {
   return bot.inventory.items().some((i) => i.name === 'crafting_table');
 }
 
-function evaluate(bot: Bot, args: CraftArgs): Precondition & { choice?: Choice } {
+/**
+ * An item name, or an item tag such as "#planks" or "#wooden_slabs" meaning any one of its members. For a tag,
+ * the first member that can be crafted from what is held wins, so "#planks" crafts whatever wood the bot has.
+ */
+function evaluate(bot: Bot, args: CraftArgs): Precondition & { choice?: Choice; item?: string } {
+  if (args.item.startsWith('#')) {
+    const members = resolveTag('item', args.item.slice(1)).map((id) => id.replace(/^minecraft:/, ''));
+    if (!members.length) return { ok: false, cause: 'invalid_args', message: `There is no item tag called "${args.item}".` };
+    let firstFailure: (Precondition & { ok: false }) | null = null;
+    for (const member of members) {
+      const r = evaluate(bot, { ...args, item: member });
+      if (r.ok) return r;
+      if (!firstFailure && r.cause !== 'invalid_args') firstFailure = r;
+    }
+    return firstFailure ?? { ok: false, cause: 'invalid_args', message: `No member of ${args.item} has a crafting recipe.` };
+  }
   const def = bot.registry.itemsByName[args.item];
   if (!def) return { ok: false, cause: 'invalid_args', message: `There is no item called "${args.item}".` };
   const choice = chooseRecipe(bot, def.id, args.count);
@@ -91,27 +107,16 @@ function evaluate(bot: Bot, args: CraftArgs): Precondition & { choice?: Choice }
       fix: 'craft a crafting_table (4 planks) or go to one',
     };
   }
-  return { ok: true, choice };
+  return { ok: true, choice, item: args.item };
 }
 
-async function walkTo(ctx: SkillContext, block: any): Promise<boolean> {
-  const bot: any = ctx.bot;
-  if (!bot.pathfinder) return false;
-  updatePathfinderMovements(ctx.bot);
-  const watchdog = new ProgressWatchdog(8000, bot.entity.position.distanceTo(block.position));
-  const goal = new goals.GoalNear(block.position.x, block.position.y, block.position.z, 2);
-  const done = bot.pathfinder.goto(goal).then(
-    () => true,
-    () => false
-  );
-  for (;;) {
-    const finished = await Promise.race([done, new Promise<null>((r) => setTimeout(() => r(null), 250))]);
-    if (finished !== null) return finished && bot.entity.position.distanceTo(block.position) <= REACH;
-    if (ctx.signal.aborted || (watchdog.report(bot.entity.position.distanceTo(block.position)), watchdog.stuck)) {
-      bot.pathfinder.stop();
-      return false;
-    }
-  }
+/** Walks until the table is within reach. Digging is allowed, so the bot can climb out of a hole it mined. */
+async function walkTo(ctx: SkillContext, block: any, evidence: string[]): Promise<boolean> {
+  const goal = new GoalReachBlock(block.position, REACH - 0.4);
+  const r = await goTo(ctx, goal, () => eyeDistance(ctx.bot, block.position), 15000, true);
+  const dist = eyeDistance(ctx.bot, block.position);
+  evidence.push(`walk to table: ${r.reason}${r.detail ? ` (${r.detail})` : ''}, ${dist.toFixed(1)} blocks away`);
+  return dist <= REACH;
 }
 
 async function placeTable(ctx: SkillContext): Promise<any | null> {
@@ -133,7 +138,7 @@ async function placeTable(ctx: SkillContext): Promise<any | null> {
 
 export const craftSkill: SkillDefinition<CraftArgs> = {
   name: 'craft',
-  summary: 'craft {item, count}: make `count` more of one item from ingredients already held; uses or places a crafting table when the recipe needs one. Does not craft the ingredients.',
+  summary: 'craft {item, count}: make `count` more of one item (or any member of an item tag like "#planks") from ingredients already held; uses or places a crafting table when needed. Does not craft the ingredients.',
   args: Args,
   check(ctx, args) {
     const r = evaluate(ctx.bot, args);
@@ -145,7 +150,9 @@ export const craftSkill: SkillDefinition<CraftArgs> = {
     const r = evaluate(bot, args);
     if (!r.ok) return { status: 'failed', cause: r.cause, message: r.message, fix: r.fix, evidence };
     const choice = r.choice!;
-    const before = bot.inventory.items().filter((i) => i.name === args.item).reduce((a, i) => a + i.count, 0);
+    const item = r.item!; // the concrete item when args.item was a tag
+    if (item !== args.item) evidence.push(`${args.item} -> ${item}`);
+    const before = bot.inventory.items().filter((i) => i.name === item).reduce((a, i) => a + i.count, 0);
     let table: any = null;
     const placedBlocks: { x: number; y: number; z: number; block: string }[] = [];
 
@@ -153,14 +160,20 @@ export const craftSkill: SkillDefinition<CraftArgs> = {
       table = findTable(bot, REACH);
       if (!table) {
         const seen = findTable(bot, WALK_TO_TABLE);
-        if (seen && (await walkTo(ctx, seen))) table = seen;
+        if (seen && (await walkTo(ctx, seen, evidence))) table = seen;
       }
       if (!table && hasTableItem(bot)) {
         table = await placeTable(ctx);
         if (table) placedBlocks.push({ x: table.position.x, y: table.position.y, z: table.position.z, block: 'crafting_table' });
       }
       if (!table) {
-        return { status: 'failed', cause: 'unreachable', message: `Could not reach or place a crafting table for ${args.item}.`, evidence };
+        return {
+          status: 'failed',
+          cause: 'unreachable',
+          message: `Could not reach or place a crafting table for ${item}.`,
+          fix: hasTableItem(bot) ? undefined : 'go to the crafting table, or craft a new one (4 planks)',
+          evidence,
+        };
       }
       evidence.push(`crafting table at ${table.position}`);
     }
@@ -173,23 +186,23 @@ export const craftSkill: SkillDefinition<CraftArgs> = {
       return {
         status: cause === 'interrupted' ? 'interrupted' : 'failed',
         cause,
-        message: `Crafting ${args.item} failed: ${(err as Error).message}`,
+        message: `Crafting ${item} failed: ${(err as Error).message}`,
         evidence,
         worldDelta: { placed: placedBlocks, broken: [] },
       };
     }
 
-    const after = bot.inventory.items().filter((i) => i.name === args.item).reduce((a, i) => a + i.count, 0);
-    evidence.push(`${args.item} ${before} -> ${after}`);
+    const after = bot.inventory.items().filter((i) => i.name === item).reduce((a, i) => a + i.count, 0);
+    evidence.push(`${item} ${before} -> ${after}`);
     const gained = after - before;
     const worldDelta = { placed: placedBlocks, broken: [] };
     if (gained >= args.count) {
-      return { status: 'done', message: `Crafted ${gained} ${args.item}.`, evidence, worldDelta };
+      return { status: 'done', message: `Crafted ${gained} ${item}.`, evidence, worldDelta };
     }
     return {
       status: gained > 0 ? 'partial' : 'failed',
       cause: 'server_rejected',
-      message: `Expected ${args.count} more ${args.item}, got ${gained}.`,
+      message: `Expected ${args.count} more ${item}, got ${gained}.`,
       evidence,
       worldDelta,
     };

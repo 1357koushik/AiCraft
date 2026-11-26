@@ -1,0 +1,21 @@
+{
+  "id": "enchanted_dig",
+  "seed": "20261109",
+  "timeoutSec": 180,
+  "setup": [
+    "give dragonai diamond_pickaxe[enchantments={efficiency:3}] 1",
+    "execute at dragonai run fill ~2 ~ ~-1 ~2 ~1 ~1 stone"
+  ],
+  "plan": {
+    "notes": "Mining with an enchanted tool in hand. Before the enchants fix, Mineflayer's dig time threw 'enchantments is not iterable'.",
+    "steps": [
+      { "skill": "equip", "args": { "item": "diamond_pickaxe" } },
+      { "skill": "mine", "args": { "block": "stone", "count": 3 } }
+    ]
+  },
+  "expect": {
+    "inventory": { "cobblestone": ">=3", "diamond_pickaxe": ">=1" },
+    "stats": { "mined:stone": ">=3" },
+    "maxDeaths": 0
+  }
+}

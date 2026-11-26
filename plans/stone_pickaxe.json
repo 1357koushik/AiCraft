@@ -1,0 +1,24 @@
+{
+  "id": "stone_pickaxe",
+  "seed": "20261109",
+  "timeoutSec": 600,
+  "setup": [],
+  "plan": {
+    "notes": "Body-alone test from nothing: a fresh world, no setup commands, no LLM. The Small Obtain cell of the task matrix.",
+    "steps": [
+      { "skill": "chop_tree", "args": { "count": 4 } },
+      { "skill": "craft", "args": { "item": "#planks", "count": 12 } },
+      { "skill": "craft", "args": { "item": "crafting_table", "count": 1 } },
+      { "skill": "craft", "args": { "item": "stick", "count": 4 } },
+      { "skill": "craft", "args": { "item": "wooden_pickaxe", "count": 1 } },
+      { "skill": "mine", "args": { "block": "stone", "count": 3 } },
+      { "skill": "craft", "args": { "item": "stone_pickaxe", "count": 1 } }
+    ]
+  },
+  "expect": {
+    "inventory": { "stone_pickaxe": ">=1" },
+    "advancements": ["story/upgrade_tools"],
+    "stats": { "crafted:stone_pickaxe": ">=1" },
+    "maxDeaths": 0
+  }
+}
