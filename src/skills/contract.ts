@@ -84,7 +84,8 @@ export interface SkillDefinition<Args = any> {
   name: string;
   /** One line for the skill catalogue shown to the LLM. */
   summary: string;
-  args: z.ZodType<Args>;
+  /** Input may differ from output (defaults, transforms); the output type is what run() receives. */
+  args: z.ZodType<Args, z.ZodTypeDef, any>;
   /** Cheap, side-effect free. Called before run and again when a plan reaches this step. */
   check(ctx: SkillContext, args: Args): Precondition | Promise<Precondition>;
   run(ctx: SkillContext, args: Args): Promise<SkillOutcome>;

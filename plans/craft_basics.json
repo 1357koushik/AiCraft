@@ -1,0 +1,21 @@
+{
+  "id": "craft_basics",
+  "seed": "20261109",
+  "timeoutSec": 180,
+  "setup": ["give dragonai oak_log 3", "give dragonai cobblestone 3"],
+  "plan": {
+    "notes": "Body-alone test of the craft skill: 2x2 recipes, a table placed from the inventory, then 3x3 recipes on it.",
+    "steps": [
+      { "skill": "craft", "args": { "item": "oak_planks", "count": 12 } },
+      { "skill": "craft", "args": { "item": "crafting_table", "count": 1 } },
+      { "skill": "craft", "args": { "item": "stick", "count": 4 } },
+      { "skill": "craft", "args": { "item": "wooden_pickaxe", "count": 1 } },
+      { "skill": "craft", "args": { "item": "stone_pickaxe", "count": 1 } }
+    ]
+  },
+  "expect": {
+    "inventory": { "wooden_pickaxe": ">=1", "stone_pickaxe": ">=1" },
+    "stats": { "crafted:stone_pickaxe": ">=1", "crafted:wooden_pickaxe": ">=1" },
+    "maxDeaths": 0
+  }
+}

@@ -14,7 +14,8 @@
     "live:connect": "tsx scripts/test_live_auto.ts",
     "inspect:world": "tsx scripts/inspect_world.ts",
     "task": "tsx scripts/run_task.ts",
-    "export:data": "tsx scripts/export_game_data.ts"
+    "export:data": "tsx scripts/export_game_data.ts",
+    "plan": "tsx scripts/run_plan.ts"
   },
   "keywords": [
     "minecraft",
