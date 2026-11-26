@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { getLootTables, resolveTag } from '../knowledge/vanilla.js';
+import { ToolPlan, lootDrops, minimumTool, toolPlanFor } from '../knowledge/harvest.js';
 import { withInventoryLock } from '../actions/reliable_craft.js';
 import { Precondition, ProgressWatchdog, SkillContext, SkillDefinition, SkillOutcome } from './contract.js';
 import { pickUpDrops } from './collect_drops.js';
@@ -24,78 +24,14 @@ const Args = z.object({
 });
 type MineArgs = z.infer<typeof Args>;
 
-const TOOL_TYPES = ['pickaxe', 'axe', 'shovel', 'hoe'] as const;
-type ToolType = (typeof TOOL_TYPES)[number];
-/** Weakest first. The tag names use "wooden" and "gold"; the item names use "wooden" and "golden". */
-const MATERIALS = [
-  { item: 'wooden', tag: 'wooden' },
-  { item: 'golden', tag: 'gold' },
-  { item: 'stone', tag: 'stone' },
-  { item: 'iron', tag: 'iron' },
-  { item: 'diamond', tag: 'diamond' },
-  { item: 'netherite', tag: 'netherite' },
-] as const;
-/** Order to suggest a tool in a "fix": by tier, skipping gold (same tier as wood but not a natural first tool). */
-const SUGGEST_ORDER = ['wooden', 'stone', 'iron', 'diamond', 'netherite'];
-
-export interface ToolPlan {
-  /** Tool type that mines this block fastest, or null when the block has no tool tag (dirt-like by hand, e.g. glass). */
-  type: ToolType | null;
-  /** True when the block drops nothing without a correct tool and tier. */
-  requiresTool: boolean;
-  /** Item names that work, weakest tier first. Empty when requiresTool is false and any tool is fine. */
-  workingTools: string[];
-  /** Item names the block drops without silk touch. */
-  drops: string[];
-}
-
-let tagSets: Map<string, Set<string>> | null = null;
-function tagSet(tag: string): Set<string> {
-  if (!tagSets) tagSets = new Map();
-  let s = tagSets.get(tag);
-  if (!s) {
-    s = new Set(resolveTag('block', tag).map(stripNs));
-    tagSets.set(tag, s);
-  }
-  return s;
-}
-
-/** Collects the item names a loot table can yield when mined without silk touch. */
-export function lootDrops(blockName: string): string[] {
-  const table: any = getLootTables()[`blocks/${blockName}`];
-  const out = new Set<string>();
-  const needsSilk = (conditions: any[] | undefined) => (conditions ?? []).some((c) => JSON.stringify(c).includes('silk_touch'));
-  const walk = (entry: any, silk: boolean) => {
-    const s = silk || needsSilk(entry.conditions);
-    if (entry.type === 'minecraft:item' && entry.name && !s) out.add(stripNs(entry.name));
-    for (const child of entry.children ?? []) walk(child, s);
-  };
-  for (const pool of table?.pools ?? []) {
-    const poolSilk = needsSilk(pool.conditions);
-    for (const entry of pool.entries ?? []) walk(entry, poolSilk);
-  }
-  return [...out];
-}
+// The tool/loot knowledge below lives in src/knowledge/harvest.ts so that bot-free code (src/brain/requirements.ts)
+// shares exactly the same rules. Behaviour here is unchanged.
+export { lootDrops };
+export type { ToolPlan };
 
 export function planTool(bot: Bot, blockName: string): ToolPlan {
-  const type = TOOL_TYPES.find((t) => tagSet(`mineable/${t}`).has(blockName)) ?? null;
   const reg = (bot.registry as any).blocksByName[blockName];
-  const requiresTool = Boolean(reg?.harvestTools);
-  const workingTools: string[] = [];
-  if (type) {
-    for (const m of MATERIALS) {
-      if (!tagSet(`incorrect_for_${m.tag}_tool`).has(blockName)) workingTools.push(`${m.item}_${type}`);
-    }
-  }
-  return { type, requiresTool, workingTools, drops: lootDrops(blockName) };
-}
-
-function minimumTool(plan: ToolPlan): string | null {
-  for (const m of SUGGEST_ORDER) {
-    const t = plan.workingTools.find((w) => w.startsWith(`${m}_`));
-    if (t) return t;
-  }
-  return plan.workingTools[0] ?? null;
+  return toolPlanFor(blockName, Boolean(reg?.harvestTools));
 }
 
 /** The held tool that breaks the block fastest among those allowed, or null to use the bare hand. */
