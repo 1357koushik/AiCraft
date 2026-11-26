@@ -209,8 +209,47 @@ export class HarnessServer {
     throw new Error('A leftover harness server did not stop within 60 s.');
   }
 
+  /**
+   * One harness run per instance folder at a time. Without this, a second run's stopLeftoverServer would shut
+   * down the first run's live server (it accepts the same RCON password). A lock left by a dead process is taken over.
+   */
+  private acquireLock(): () => void {
+    const lockPath = path.join(this.instanceDir, '.harness.lock');
+    if (fs.existsSync(lockPath)) {
+      const pid = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
+      let alive = false;
+      if (Number.isInteger(pid) && pid !== process.pid) {
+        try {
+          process.kill(pid, 0);
+          alive = true;
+        } catch {
+          alive = false;
+        }
+      }
+      if (alive) throw new Error(`Another harness run (pid ${pid}) is using ${this.instanceDir}. Wait for it to finish.`);
+    }
+    fs.writeFileSync(lockPath, String(process.pid));
+    return () => {
+      try {
+        if (fs.readFileSync(lockPath, 'utf8') === String(process.pid)) fs.rmSync(lockPath, { force: true });
+      } catch {
+        // Already gone.
+      }
+    };
+  }
+
   /** Starts the server on the given world and waits until RCON answers. */
   async start(world: WorldOptions, opts: { stdoutPath?: string; readyTimeoutMs?: number } = {}): Promise<RunningServer> {
+    const releaseLock = this.acquireLock();
+    try {
+      return await this.startLocked(world, opts, releaseLock);
+    } catch (err) {
+      releaseLock();
+      throw err;
+    }
+  }
+
+  private async startLocked(world: WorldOptions, opts: { stdoutPath?: string; readyTimeoutMs?: number }, releaseLock: () => void): Promise<RunningServer> {
     await this.stopLeftoverServer();
     for (const port of [this.port, this.rconPort]) {
       if (await portInUse(port)) {
@@ -252,16 +291,20 @@ export class HarnessServer {
     }
 
     const stop = async () => {
-      if (exited !== null) return;
       try {
-        await rcon.command('stop');
-      } catch {
-        // Connection may drop while stopping.
+        if (exited !== null) return;
+        try {
+          await rcon.command('stop');
+        } catch {
+          // Connection may drop while stopping.
+        }
+        rcon.close();
+        const timeout = new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), 60000));
+        if ((await Promise.race([exitPromise.then(() => 'exited' as const), timeout])) === 'timeout') child.kill();
+        await exitPromise;
+      } finally {
+        releaseLock();
       }
-      rcon.close();
-      const timeout = new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), 60000));
-      if ((await Promise.race([exitPromise.then(() => 'exited' as const), timeout])) === 'timeout') child.kill();
-      await exitPromise;
     };
 
     return { process: child, rcon, worldDir, logPath: path.join(this.instanceDir, 'logs', 'latest.log'), stop };

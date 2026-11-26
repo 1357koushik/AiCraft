@@ -1,4 +1,5 @@
 import { Bot } from 'mineflayer';
+import { traceEvent } from '../utils/packet_trace.js';
 
 export enum ActionPriority {
   LOW = 10,
@@ -179,6 +180,7 @@ export class ActionArbiter {
       this.actuatorOwners.set(actuator, newAction);
     }
     this.currentAction = this.getHighestPriorityAction();
+    traceEvent('action_start', { name: actionName, actionId, priority, actuators: requestedActuators, preempted: [...actionsToPreempt].map((a) => a.name) });
 
     return {
       actionId,
@@ -210,6 +212,7 @@ export class ActionArbiter {
     }
 
     this.runningActions.delete(actionId);
+    traceEvent('action_finish', { name: action.name, actionId });
     const releasedActuators = new Set<Actuator>();
     for (const act of action.actuators) {
       if (this.actuatorOwners.get(act) === action) {
@@ -219,6 +222,7 @@ export class ActionArbiter {
     }
 
     this.currentAction = this.getHighestPriorityAction();
+    traceEvent('action_current', { name: this.currentAction?.name ?? null });
     if (actualBot) {
       this.releasePhysicalControls(actualBot, false, releasedActuators);
     }
@@ -284,6 +288,7 @@ export class ActionArbiter {
 
   private preemptActionInstance(action: RunningActionInfo, reason: string, bot?: Bot): void {
     this.logger?.debug?.(`Arbiter cancelling ${action.name}: ${reason}`);
+    traceEvent('action_preempt', { name: action.name, actionId: action.actionId, reason });
     action.abortController.abort(new Error(reason));
     this.runningActions.delete(action.actionId);
     for (const act of action.actuators) {

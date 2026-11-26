@@ -81,6 +81,7 @@ function startAgent(spec: TaskSpec, runDir: string): ChildProcess {
       AGENT_HEADLESS: '1',
       AICRAFT_DATA_DIR: path.join(runDir, 'agent-data'),
       AICRAFT_LOG_DIR: path.join(runDir, 'agent-logs'),
+      AICRAFT_PACKET_TRACE: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

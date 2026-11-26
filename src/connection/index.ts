@@ -4,6 +4,8 @@ import minecraftData from 'minecraft-data';
 import { AppConfig } from '../config/index.js';
 import { AgentLogger } from '../utils/logger.js';
 import { updatePathfinderMovements } from '../actions/techniques.js';
+import { installPacketTrace } from '../utils/packet_trace.js';
+import { logDir } from '../utils/paths.js';
 
 export interface ConnectionEvents {
   onSpawn?: (bot: Bot) => void;
@@ -73,6 +75,7 @@ export class ConnectionManager {
         return;
       }
       this.bot = bot;
+      installPacketTrace(bot, logDir('packets.ndjson'));
 
       // Attach pathfinder plugin
       bot.loadPlugin(pathfinder);
