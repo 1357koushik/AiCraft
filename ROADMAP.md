@@ -365,7 +365,13 @@ Known gaps, each picked up in the phase that needs it:
 - items in an open crafting grid or on the cursor are not counted
 - no repeat runs, and no record of LLM calls
 
-### Phase 1: A complete, trustworthy body · next
+### Phase 1: A complete, trustworthy body · in progress
+
+Progress as of 2026-11-27:
+- **Done:** game data export and loader (`data/vanilla/1.21.6/`); skill contract and step-plan runner (`src/skills/contract.ts`); crafting fix, proven by a stress reproduction (0 of 20 loops lost items, against 5 of 6 before) and 9 of 9 live stone pickaxe passes; repeat runs with a pass-rate table; inventory packet trace; one-run-at-a-time harness lock; leftover verification code removed.
+- **Not started:** the action layer audit against Mineflayer; the coverage script; the basic skills rewritten against the contract; `use_station`; arenas; reflex pause and resume; block, region and container checks in the oracle; removing the `_isMockFunction` check.
+- **Found on the way:** preempting an action does not stop it (Mineflayer calls cannot be cancelled), so two actions can drive the bot at once. Crafting now holds an inventory lock; the other skills need the same protection when they are rewritten against the contract.
+
 **Catalogue:** sections 3 (all actions), 4 (senses), 6 (on foot, making a way), 7, 8 (placing, without designs), 9, 10 (crafting, furnaces, containers), 11 (all recipes).
 
 The action layer in full and the basic skills, all driven by game data and all tested with no LLM involved.

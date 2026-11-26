@@ -1,6 +1,6 @@
 # Project Status
 
-What has actually been shown to work, and how we know. Last reviewed **2026-11-11** against the code, tests and server-side evidence, not against earlier reports or commit titles.
+What has actually been shown to work, and how we know. Last reviewed **2026-11-27** against the code, tests and server-side evidence, not against earlier reports or commit titles.
 
 ## Labels
 | Label | Meaning |
@@ -16,8 +16,8 @@ What has actually been shown to work, and how we know. Last reviewed **2026-11-1
 | Stage | Status | Evidence |
 | --- | --- | --- |
 | Connect / reconnect to the server | **Live** | Every harness run |
-| Wood → wooden pickaxe | **Server-judged PASS** (1 of 1 runs) | `logs/runs/run_20261109_135152_wooden_pickaxe`: seed 20261109, fresh world, no commands, 30 s; RCON inventory and stats file both show `crafted:wooden_pickaxe +1`. **Not reliable:** the stone pickaxe run below, on the same seed, needed a wooden pickaxe first and never made one. The passing run also crafted an `oak_button` by mistake |
-| Wooden → stone pickaxe | **Server-judged FAIL** (1 of 1 runs) | `logs/runs/run_20261109_135253_stone_pickaxe`: 900 s timeout, no pickaxe of any kind at the end (see Known issues). Two old worlds from 2026-10-23 hold a crafted stone pickaxe, from runs with no command detection and before the planner rewrite |
+| Wood → wooden pickaxe | **Server-judged, part of every stone run below** | Each stone pickaxe run below crafted a wooden pickaxe first, unassisted |
+| Wooden → stone pickaxe | **Server-judged PASS, 9 of 9 runs since the crafting fix** (seeds 20261109, 7, 42; 3 runs each) | Batches `logs/runs/batch_20261126_205330_stone_pickaxe` (6 of 6) and the next batch (3 of 3). Median 116 s, 0 deaths, 0 commands. No crafting errors in any run's log. Before the fix: 1 PASS, 1 FAIL on seed 20261109 (2026-11-09), and 2 PASS in traced runs on 2026-11-27, one of which shows the inventory drift in its trace. These runs still use the old agent loop (LLM fallback, hand-written goal plans); between 1 and 32 LLM calls per run |
 | Iron, armor, food, diamonds, obsidian | **Unit only** | Code in `src/actions/` and `src/actions/mining/`, never run live |
 | Nether, fortress, blaze, piglin, ender pearls | **Not connected** | `src/dimensions/nether/`, `src/actions/combat/{enderman,wither_skeleton}_tactics.ts`; see `src/dimensions/README.md` |
 | Stronghold, End, Ender Dragon | **Not connected** | `src/dimensions/stronghold/`, `src/dimensions/the_end/` |
@@ -44,24 +44,20 @@ Older milestone reports in `logs/survival/` predate the harness. Milestone 1 the
   - an LLM fallback (Gemini through an OpenAI-compatible endpoint in `config/config.yaml`)
   - about 58 actions in `src/actions/registry.ts`, all overworld basics
 - **`AGENT_GOAL="…"`** gives it a startup task, treated as an owner instruction. **`AGENT_HEADLESS=1`** skips the console UI.
-- **`npm run task`** runs the agent on one task against a separate harness server in `runtime/server/` and writes a verdict to `logs/runs/<runId>/`. See README, "Server-judged task runs".
+- **`npm run task`** runs the agent on one task against a separate harness server in `runtime/server/` and writes a verdict to `logs/runs/<runId>/`. `--seeds` and `--repeat` run a batch and write a pass-rate table. See README, "Server-judged task runs".
+- **Phase 1 groundwork (not yet used by the agent):** the skill contract and step-plan runner (`src/skills/contract.ts`, 79 unit tests), and the game's own data for 1.21.6 in `data/vanilla/1.21.6/` with a loader (`src/knowledge/vanilla.ts`).
 
 ## Known issues
 
-- **The stone pickaxe plan skips gathering wood (seen live, first cause of the failed run).** Its first task is a bare `craft_item wooden_pickaxe` with no prerequisites (`src/agent/goals.ts:500-506`). With an empty inventory it failed twice in two seconds and was marked `failed`.
-- **No recovery after a failed task.** The failure cascades to every later task (`goals.ts:816-819, 923`) and the LLM takes over one action at a time. In that run it made 109 calls without progress.
-- **Crafting loses items (seen live).** In the stone pickaxe run:
-  - a stick craft from planks produced 0 sticks
-  - 16 crafts failed with `bot.craft … Event updateSlot:0 did not fire within timeout of 20000ms`, and several reported "inventory only increased by 0".
-  - The server's stats show 24 logs picked up and 12 planks crafted, with nothing dropped, yet the bot ended with 1 log. Items are probably stuck in a crafting window that never closed properly.
-  - It never crafted a stick and never placed the crafting table.
-  - These three issues block everything past wood. The crafting fix is Phase 1 in ROADMAP.md; the plan and recovery problems go away in Phase 2, when the LLM step-plan loop replaces the hand-written plans.
-- **The judge has only four runs behind it**, and it can only check bot inventory, advancements, stat increases, final dimension and deaths. Items in an open crafting grid or on the cursor are not counted.
-- **Crafting error messages in the same run:** "Cannot craft 1x wooden_pickaxe: missing required ingredients (1x wooden_pickaxe)" and "(1x crafting_table)" while holding one.
+- **Crafting lost items: fixed 2026-11-27, proven live.** Cause, from a packet trace of a live run: Mineflayer's `bot.craft` sends clicks back to back; a late server reply makes a click's state number out of date; a 1.21.6 server then resends the whole inventory mid-sequence, which overwrites Mineflayer's picture of the grid. It then took results early (the stray `oak_button`), left items in the grid, or waited 20 s for a result that never changed (`updateSlot:0 did not fire`). The fix is `src/actions/reliable_craft.ts`, which clicks one slot at a time and checks with the server. `scripts/repro_craft.ts --back-to-back` reproduces it: `bot.craft` lost wood in 5 of 6 loops, the new routine in 0 of 20.
+- **The stone pickaxe plan skips gathering wood** (`src/agent/goals.ts:500-506`). It now passes anyway, because the first LLM step usually chops a tree before the task arrives, and the crafting planner fills in the chain. With an empty inventory and no tree chopped first, it still fails twice and stops.
+- **No recovery after a failed task.** The failure cascades to every later task (`goals.ts:816-819, 923`) and the LLM takes over one action at a time. Both go away in Phase 2, when the step-plan loop replaces the hand-written plans.
+- **Actions keep running after they are replaced.** Preempting an action only fires its abort signal; skills that ignore it (Mineflayer calls cannot be cancelled) keep going while the next action starts. The packet trace shows actions that are never finished. Crafting is now protected by an inventory lock; other skills are not yet.
+- **The task arrives 2 s after the agent starts,** so each run opens with an LLM call for a default goal.
+- **The judge can only check** bot inventory, advancements, stat increases, final dimension and deaths. Items in an open crafting grid or on the cursor are not visible to it (RCON does not report them). It has judged 18 runs: 12 PASS, 2 FAIL, 1 ASSISTED (the deliberate `/give` check) and 3 ERROR. All 3 errors came from a test server started alongside a batch, which shut the batch's server down; a lock now prevents that.
 - **Risky movement:** the bot spent a lot of time underwater in that run (236 m walked underwater, 6 hearts of damage taken).
-- **Type-check gaps:** `tsconfig.json` type-checks only `src/`. Strict `tsc` over `tests/`, `scripts/` and `tools/` reports about 80 existing errors, mostly mock objects in tests.
+- **Type-check gaps:** `tsconfig.json` type-checks only `src/`, not `tests/` or `scripts/`.
 - **Ender Dragon helpers:** they don't move the bot to the fountain, they write `bot.entity.yaw` directly, and several late-game helpers still report success without checking (listed in `src/dimensions/README.md`).
-- **A meaningless test:** `tests/survival_evaluation.test.ts` "tracks planning latency" checks random numbers it generates itself.
 
 ## How to check things yourself
 
@@ -69,5 +65,9 @@ Older milestone reports in `logs/survival/` predate the harness. Milestone 1 the
 npm test                                   # unit tests (mostly mocked bots; tests/oracle.test.ts uses real server output)
 npm run typecheck                          # type-check src/
 npm run task -- tasks/wooden_pickaxe.json  # server-judged run (stop any server on port 25565 first)
-npm run task -- tasks/stone_pickaxe.json
+npm run task -- tasks/stone_pickaxe.json --seeds 20261109,7,42 --repeat 3   # pass-rate table
+npx tsx scripts/repro_craft.ts --back-to-back --reliable --loops 20        # crafting under stress
+npm run export:data                        # regenerate data/vanilla/<version>/ from server/server.jar
 ```
+
+Every harness run writes `agent-logs/packets.ndjson`: inventory packets and action changes on one timeline.
