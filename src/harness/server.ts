@@ -213,22 +213,42 @@ export class HarnessServer {
    * One harness run per instance folder at a time. Without this, a second run's stopLeftoverServer would shut
    * down the first run's live server (it accepts the same RCON password). A lock left by a dead process is taken over.
    */
-  private acquireLock(): () => void {
-    const lockPath = path.join(this.instanceDir, '.harness.lock');
-    if (fs.existsSync(lockPath)) {
-      const pid = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
-      let alive = false;
-      if (Number.isInteger(pid) && pid !== process.pid) {
-        try {
-          process.kill(pid, 0);
-          alive = true;
-        } catch {
-          alive = false;
-        }
-      }
-      if (alive) throw new Error(`Another harness run (pid ${pid}) is using ${this.instanceDir}. Wait for it to finish.`);
+  private lockHolder(lockPath: string): number | null {
+    if (!fs.existsSync(lockPath)) return null;
+    const pid = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
+    if (!Number.isInteger(pid) || pid === process.pid) return null;
+    try {
+      process.kill(pid, 0);
+      return pid;
+    } catch {
+      return null; // the holder died; its lock is stale
     }
-    fs.writeFileSync(lockPath, String(process.pid));
+  }
+
+  /** Waits for the instance to be free (up to HARNESS_LOCK_WAIT_SEC, default 30 min), then takes it. */
+  private async acquireLock(): Promise<() => void> {
+    const lockPath = path.join(this.instanceDir, '.harness.lock');
+    const waitMs = Number(process.env.HARNESS_LOCK_WAIT_SEC ?? 1800) * 1000;
+    const start = Date.now();
+    let announced = false;
+    for (;;) {
+      const holder = this.lockHolder(lockPath);
+      if (holder === null) {
+        // Write then re-read: if two waiters race, only the one whose pid stuck goes ahead.
+        fs.writeFileSync(lockPath, String(process.pid));
+        await new Promise((r) => setTimeout(r, 200));
+        if (fs.readFileSync(lockPath, 'utf8') === String(process.pid)) break;
+        continue;
+      }
+      if (Date.now() - start > waitMs) {
+        throw new Error(`Another harness run (pid ${holder}) has used ${this.instanceDir} for over ${Math.round(waitMs / 60000)} min.`);
+      }
+      if (!announced) {
+        console.log(`[harness] waiting for another harness run (pid ${holder}) to finish...`);
+        announced = true;
+      }
+      await new Promise((r) => setTimeout(r, 3000 + Math.random() * 2000));
+    }
     return () => {
       try {
         if (fs.readFileSync(lockPath, 'utf8') === String(process.pid)) fs.rmSync(lockPath, { force: true });
@@ -240,7 +260,7 @@ export class HarnessServer {
 
   /** Starts the server on the given world and waits until RCON answers. */
   async start(world: WorldOptions, opts: { stdoutPath?: string; readyTimeoutMs?: number } = {}): Promise<RunningServer> {
-    const releaseLock = this.acquireLock();
+    const releaseLock = await this.acquireLock();
     try {
       return await this.startLocked(world, opts, releaseLock);
     } catch (err) {
