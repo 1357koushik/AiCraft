@@ -1,0 +1,32 @@
+{
+  "id": "mine_iron",
+  "seed": "20261109",
+  "timeoutSec": 240,
+  "setup": [
+    "give dragonai stone_pickaxe 1",
+    "execute at dragonai run fill ~-8 ~ ~-8 ~8 ~5 ~8 air",
+    "execute at dragonai run fill ~-8 ~-1 ~-8 ~8 ~-1 ~8 grass_block",
+    "execute at dragonai run fill ~-4 ~ ~4 ~-2 ~1 ~4 iron_ore"
+  ],
+  "plan": {
+    "notes": "With a stone pickaxe, mine 2 iron ore and pick up the raw iron.",
+    "steps": [
+      {
+        "skill": "mine",
+        "args": {
+          "block": "iron_ore",
+          "count": 2
+        }
+      }
+    ]
+  },
+  "expect": {
+    "inventory": {
+      "raw_iron": ">=2"
+    },
+    "stats": {
+      "picked_up:raw_iron": ">=2"
+    },
+    "maxDeaths": 0
+  }
+}

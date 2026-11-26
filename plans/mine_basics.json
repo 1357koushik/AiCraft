@@ -1,0 +1,41 @@
+{
+  "id": "mine_basics",
+  "seed": "20261109",
+  "timeoutSec": 240,
+  "setup": [
+    "give dragonai wooden_pickaxe 1",
+    "execute at dragonai run fill ~-8 ~ ~-8 ~8 ~5 ~8 air",
+    "execute at dragonai run fill ~-8 ~-1 ~-8 ~8 ~-1 ~8 grass_block",
+    "execute at dragonai run fill ~2 ~ ~4 ~4 ~1 ~4 stone",
+    "execute at dragonai run fill ~-4 ~ ~4 ~-2 ~1 ~4 iron_ore"
+  ],
+  "plan": {
+    "notes": "Mine 3 stone with a wooden pickaxe (works), then iron_ore (must fail with missing_tool: it needs a stone pickaxe). The plan stopping at step 2 is the correct outcome.",
+    "steps": [
+      {
+        "skill": "mine",
+        "args": {
+          "block": "stone",
+          "count": 3
+        }
+      },
+      {
+        "skill": "mine",
+        "args": {
+          "block": "iron_ore",
+          "count": 1
+        }
+      }
+    ]
+  },
+  "expect": {
+    "inventory": {
+      "cobblestone": ">=3",
+      "raw_iron": "==0"
+    },
+    "stats": {
+      "picked_up:cobblestone": ">=3"
+    },
+    "maxDeaths": 0
+  }
+}

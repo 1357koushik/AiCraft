@@ -1,0 +1,17 @@
+{
+  "id": "chop_basics",
+  "seed": "20261109",
+  "timeoutSec": 240,
+  "setup": [],
+  "plan": {
+    "notes": "Body-alone test of chop_tree: fell the nearest oak trees on the bare spawn area until 4 more logs are held.",
+    "steps": [
+      { "skill": "chop_tree", "args": { "count": 4, "log": "oak_log" } }
+    ]
+  },
+  "expect": {
+    "inventory": { "oak_log": ">=4" },
+    "stats": { "picked_up:oak_log": ">=4" },
+    "maxDeaths": 0
+  }
+}

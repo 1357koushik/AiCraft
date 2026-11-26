@@ -1,0 +1,17 @@
+{
+  "id": "chop_tall",
+  "seed": "20261109",
+  "timeoutSec": 300,
+  "setup": [
+    "execute at dragonai run setblock ~4 ~-1 ~4 dirt",
+    "execute at dragonai run fill ~4 ~ ~4 ~4 ~9 ~4 spruce_log",
+    "give dragonai dirt 4"
+  ],
+  "plan": {
+    "notes": "A bare 10-high pole forces chop_tree to pillar up (dirt is held). Then collect_drops on an item dropped nearby.",
+    "steps": [
+      { "skill": "chop_tree", "args": { "count": 10, "log": "spruce_log" } }
+    ]
+  },
+  "expect": { "inventory": { "spruce_log": ">=10" }, "maxDeaths": 0 }
+}
