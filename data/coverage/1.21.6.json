@@ -531,7 +531,9 @@
         ]
       },
       "minecraft:kill_mob_near_sculk_catalyst": {
-        "gap": "sculk catalyst: killing a mob next to it, spreading sculk and the xp it eats are not in the catalogue"
+        "sections": [
+          26
+        ]
       },
       "minecraft:killed_by_arrow": {
         "sections": [
@@ -778,10 +780,14 @@
         ]
       },
       "minecraft:big_dripleaf": {
-        "gap": "big dripleaf: tilts and drops when stood on, usable as a platform or slow-fall step; not listed under blocks that change movement"
+        "sections": [
+          6
+        ]
       },
       "minecraft:big_dripleaf_stem": {
-        "gap": "big dripleaf stem: part of the dripleaf above, same missing behaviour"
+        "sections": [
+          6
+        ]
       },
       "minecraft:blast_furnace": {
         "sections": [
@@ -816,7 +822,9 @@
         ]
       },
       "minecraft:budding_amethyst": {
-        "gap": "budding amethyst: growth of amethyst clusters in a geode (a renewable resource) is not in section 16 or anywhere else"
+        "sections": [
+          16
+        ]
       },
       "minecraft:bush": {
         "sections": [
@@ -1588,7 +1596,10 @@
         ]
       },
       "minecraft:sculk_catalyst": {
-        "gap": "sculk catalyst: spreading sculk from nearby deaths, its xp use and its place in ancient cities are not in the catalogue"
+        "sections": [
+          26,
+          16
+        ]
       },
       "minecraft:sculk_sensor": {
         "sections": [

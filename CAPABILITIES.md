@@ -156,7 +156,7 @@ Each group lists what must be possible, what drives it, whether it needs speed, 
 - **Flight and throws:** elytra with firework rockets, ender pearl throws, riptide trident.
 - **Between dimensions:** nether portals (build, light, link pairs), end portals, end gateways.
 - **Landing safely:** water bucket, slow falling, hay or slime, never a blind drop.
-- **Blocks that change movement:** soul sand and magma bubble columns as lifts, honey and slime blocks, ice and packed-ice boat roads, cobwebs, powder snow, sweet berries, scaffolding.
+- **Blocks that change movement:** soul sand and magma bubble columns as lifts, honey and slime blocks, ice and packed-ice boat roads, cobwebs, powder snow, sweet berries, scaffolding, and big dripleaf, which tilts and drops whoever stands on it for more than a moment (a step to cross quickly, or a trap).
 - **Flying well:** shallow angles, turning to lose speed, flat landings, counting rockets, swapping to a spare elytra before the first one breaks.
 - **Fall savers beyond the water bucket,** and where each works: boat, scaffolding, twisting vines, powder snow bucket, sweet berries, slime, ender pearl, chorus fruit. Water cannot be placed in the Nether.
 - **Leaving a trail:** torches or an out-of-place block along the route, so the bot and the owner can both find the way back.
@@ -300,7 +300,7 @@ Runs on the reflex clock unless noted.
 - **Operate it.** Many farms need a player in an exact spot, a lever pulled, or mobs hit through a gap. The design records the procedure.
 - **Measure it.** After building, the bot runs the farm for a set time and counts the output. A farm that yields nothing is a failed build, whatever the blocks look like.
 - **Farm or gather by hand?** For a small amount, gathering is quicker. For a large or repeated amount, building a farm pays off. Code gives the LLM both estimates.
-- **Renewable blocks:** a cobblestone or basalt generator, obsidian from water on lava, dripstone filling a cauldron with lava or water, an endless water source, ice, mud from water bottles, concrete from powder.
+- **Renewable blocks:** amethyst clusters that grow on budding amethyst (which breaks if mined, so it is harvested in place), a cobblestone or basalt generator, obsidian from water on lava, dripstone filling a cauldron with lava or water, an endless water source, ice, mud from water bottles, concrete from powder.
 - **Driven by:** the mechanics book for growth rules; loot tables for yields.
 - **Server check:** block states (crop age), entity counts, `fish_caught`, crafted and picked-up counters.
 
@@ -381,7 +381,7 @@ Tasks where the LLM invents the result: buildings and monuments from the real wo
 - **Server check:** region block reads.
 
 ### 26. Staying unnoticed
-- **Sculk:** sneak, use wool, never set off a shrieker; leave an ancient city alive.
+- **Sculk:** sneak, use wool, never set off a shrieker; leave an ancient city alive. A sculk catalyst spreads sculk where mobs die nearby and takes their experience, so killing near one changes the terrain and is something to avoid or, for experience farming, to use on purpose.
 - **Endermen:** don't look at them, or wear a carved pumpkin.
 - **Piglins:** wear gold; don't mine gold or open chests in view.
 - **Others:** invisibility potions, staying out of mob sight range, not waking a sleeping village's golem by hitting a villager.

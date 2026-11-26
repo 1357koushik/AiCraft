@@ -6,13 +6,7 @@ import { checkCoverage, loadCatalogueSections, loadCoverageFile, loadRegistries,
  * the catalogue, then change its mapping from "gap" to sections) or justified as not_survival. Keys are
  * "<registry> <entry>". The script `npm run coverage` still reports these as failures.
  */
-const KNOWN_GAPS = [
-  'minecraft:trigger_type minecraft:kill_mob_near_sculk_catalyst',
-  'minecraft:block_type minecraft:sculk_catalyst',
-  'minecraft:block_type minecraft:budding_amethyst',
-  'minecraft:block_type minecraft:big_dripleaf',
-  'minecraft:block_type minecraft:big_dripleaf_stem',
-];
+const KNOWN_GAPS: string[] = [];
 
 describe('capability catalogue coverage', () => {
   it('maps every registry entry, and only reviewed gaps remain', () => {
