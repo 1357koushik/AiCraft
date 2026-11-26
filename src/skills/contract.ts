@@ -297,6 +297,12 @@ export async function runPlan(raw: unknown, registry: SkillRegistry, ctx: SkillC
 // ---------------------------------------------------------------------------------------------
 
 export class ProgressWatchdog {
+  /**
+   * True while something else legitimately holds the body (a reflex fighting or fleeing). Time spent then does
+   * not count as lack of progress. Set by the reflex guard; false by default.
+   */
+  static isPaused: () => boolean = () => false;
+
   private best: number;
   private lastImprovedAt: number;
 
@@ -325,6 +331,10 @@ export class ProgressWatchdog {
   }
 
   get stuck(): boolean {
+    if (ProgressWatchdog.isPaused()) {
+      this.lastImprovedAt = this.now();
+      return false;
+    }
     return this.now() - this.lastImprovedAt > this.windowMs;
   }
 

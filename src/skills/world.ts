@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { body } from '../reflexes/body.js';
 import { ProgressWatchdog, SkillContext } from './contract.js';
 import { updatePathfinderMovements } from '../actions/techniques.js';
 
@@ -86,7 +87,8 @@ export function countItems(bot: Bot, match: (name: string) => boolean): number {
  * except a position in the block's own column at or above it (standing on a block you mean to break).
  */
 export class GoalReachBlock {
-  constructor(private readonly pos: Vec3, private readonly reach = DIG_REACH - 0.4) {}
+  /** `standable` can veto standing spots (for example ones with the head in water). */
+  constructor(private readonly pos: Vec3, private readonly reach = DIG_REACH - 0.4, private readonly standable?: (x: number, y: number, z: number) => boolean) {}
   heuristic(node: { x: number; y: number; z: number }): number {
     const dx = node.x + 0.5 - (this.pos.x + 0.5);
     const dz = node.z + 0.5 - (this.pos.z + 0.5);
@@ -95,6 +97,7 @@ export class GoalReachBlock {
   }
   isEnd(node: { x: number; y: number; z: number }): boolean {
     if (node.x === this.pos.x && node.z === this.pos.z && node.y >= this.pos.y) return false;
+    if (this.standable && !this.standable(node.x, node.y, node.z)) return false;
     const dx = node.x + 0.5 - (this.pos.x + 0.5);
     const dz = node.z + 0.5 - (this.pos.z + 0.5);
     const dy = node.y + EYE_HEIGHT - (this.pos.y + 0.5);
@@ -136,12 +139,14 @@ export interface GoResult {
  * Runs the pathfinder to a goal. `remaining` returns a number that shrinks as the bot gets closer; the walk
  * is abandoned only when that number stops improving for `stuckMs`, not after a fixed time.
  */
-export async function goTo(ctx: SkillContext, goal: any, remaining: () => number, stuckMs = 8000, canDig = true): Promise<GoResult> {
+export async function goTo(ctx: SkillContext, goal: any, remaining: () => number, stuckMs = 8000, canDig = true, thinkMs?: number): Promise<GoResult> {
   const bot: any = ctx.bot;
   if (!bot.pathfinder) return { ok: false, reason: 'error', detail: 'pathfinder plugin not loaded' };
   if (ctx.signal.aborted) return { ok: false, reason: 'aborted' };
   const movements = updatePathfinderMovements(ctx.bot);
   if (movements) movements.canDig = canDig;
+  // Bounded planning time per target so an unreachable one is given up quickly instead of burning the watchdog.
+  bot.pathfinder.thinkTimeout = thinkMs ?? 5000;
   const watchdog = new ProgressWatchdog(stuckMs, remaining());
   let failure: string | null = null;
   const done: Promise<boolean> = bot.pathfinder.goto(goal).then(
@@ -153,6 +158,12 @@ export async function goTo(ctx: SkillContext, goal: any, remaining: () => number
   );
   for (;;) {
     const finished = await Promise.race([done, sleep(250).then(() => null)]);
+    // While a reflex holds the body the walk is paused inside pathfinder.goto (see src/reflexes/guard.ts);
+    // that time is not lack of progress.
+    if (body.reflexActive) {
+      watchdog.touch();
+      continue;
+    }
     if (finished !== null) {
       if (finished) return { ok: true, reason: 'arrived' };
       if (ctx.signal.aborted) return { ok: false, reason: 'aborted' };
