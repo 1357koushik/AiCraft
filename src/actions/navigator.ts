@@ -471,14 +471,13 @@ export async function navigateWithBounds(
 
     // Verify physical arrival within target range
     const finalPos = bot.entity?.position;
-    const isMockGoto = Boolean((bot as any).pathfinder?.goto?._isMockFunction);
     const arrived = finalPos
       ? (horizontalOnly
           ? Math.hypot(finalPos.x - targetPos.x, finalPos.z - targetPos.z) <= range + 0.35
           : distance3D(finalPos, targetPos) <= range + 0.35)
       : false;
 
-    if (!arrived && (!isMockGoto || (options as any).verifyArrival || (bot as any).__verifyArrival)) {
+    if (!arrived) {
       navigationBlacklist.recordFailure(
         targetPos,
         'Target not reached within range upon pathfinder completion',

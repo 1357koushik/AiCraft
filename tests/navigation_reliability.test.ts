@@ -10,6 +10,13 @@ import {
 } from '../src/actions/navigator.js';
 import { ActionExecutionContext, Observation } from '../src/types/index.js';
 
+// Moves the fake bot onto a goal the way a successful pathfinder run would.
+// XZ goals carry no Y, so the bot keeps its current elevation.
+const moveBotOntoGoal = (bot: any, goal: any) => {
+  const current: Vec3 = bot.entity.position;
+  bot.entity.position = new Vec3(goal.x, goal.y ?? current.y, goal.z);
+};
+
 describe('Navigation & Exploration Reliability Subsystem', () => {
   beforeEach(() => {
     navigationBlacklist.clear();
@@ -374,8 +381,10 @@ describe('Navigation & Exploration Reliability Subsystem', () => {
         config: mockConfig,
       };
 
-      mockBot.pathfinder.goto = vi.fn().mockResolvedValue(undefined);
-      const res2 = await navigateWithBounds(mockBot, { target: new Vec3(15, 64, 15) }, ctx2);
+      mockBot.pathfinder.goto = vi.fn().mockImplementation(async (goal: any) => {
+        moveBotOntoGoal(mockBot, goal);
+      });
+      const res2 =await navigateWithBounds(mockBot, { target: new Vec3(15, 64, 15) }, ctx2);
       expect(res2.status).toBe('arrived');
       expect(res2.success).toBe(true);
     });
@@ -398,6 +407,7 @@ describe('Navigation & Exploration Reliability Subsystem', () => {
           throw err;
         }
         // Second direction (north) succeeds
+        moveBotOntoGoal(mockBot, goal);
       });
 
       const exploreAction = movementActions.find((a) => a.name === 'explore')!;

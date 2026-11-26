@@ -5,6 +5,13 @@ import { movementActions } from '../src/actions/movement.js';
 import { navigationBlacklist } from '../src/actions/blacklist.js';
 import { ActionExecutionContext, Observation } from '../src/types/index.js';
 
+// Moves the fake bot onto a goal the way a successful pathfinder run would.
+// XZ goals carry no Y, so the bot keeps its current elevation.
+const moveBotOntoGoal = (bot: any, goal: any) => {
+  const current: Vec3 = bot.entity.position;
+  bot.entity.position = new Vec3(goal.x, goal.y ?? current.y, goal.z);
+};
+
 describe('Movement Actions & Spatial Elevation Robustness', () => {
   beforeEach(() => {
     navigationBlacklist.clear();
@@ -190,6 +197,7 @@ describe('Movement Actions & Spatial Elevation Robustness', () => {
       const mockBot: any = createBaseMockBot(new Vec3(10, 64, 10));
       mockBot.pathfinder.goto = vi.fn().mockImplementation(async (goal: any) => {
         recordedGoal = goal;
+        moveBotOntoGoal(mockBot, goal);
       });
 
       const obs = createMockObservation([]);
@@ -208,6 +216,7 @@ describe('Movement Actions & Spatial Elevation Robustness', () => {
       const mockBot: any = createBaseMockBot(new Vec3(10, 64, 10));
       mockBot.pathfinder.goto = vi.fn().mockImplementation(async (goal: any) => {
         recordedGoal = goal;
+        moveBotOntoGoal(mockBot, goal);
       });
 
       const obs = createMockObservation([]);
@@ -250,6 +259,7 @@ describe('Movement Actions & Spatial Elevation Robustness', () => {
           // First direction blocked
           throw new Error('Blocked by terrain');
         }
+        moveBotOntoGoal(mockBot, goal);
       });
 
       const obs = createMockObservation([]);
@@ -286,6 +296,7 @@ describe('Movement Actions & Spatial Elevation Robustness', () => {
           // GoalNearXZ evaluates only horizontal distance: hypot(69-69, -8-(-8)) = 0 <= radius (3) -> true!
           const satisfied = (goal as any).isEnd(destinationEastTerrainPos);
           expect(satisfied).toBe(true);
+          moveBotOntoGoal(mockBot, goal);
           return;
         }
       });
