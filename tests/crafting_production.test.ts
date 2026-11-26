@@ -11,6 +11,21 @@ import {
 import { ActionExecutionContext, Observation } from '../src/types/index.js';
 import { techniqueSmeltItem, techniqueSmeltPipeline } from '../src/actions/techniques.js';
 
+// Test double for the reliable crafting routine. These tests cover the executor's logic only
+// (planning, count semantics, postcondition verification, cancellation, workstation ownership)
+// against a fake bot's bot.craft. Crafting itself (slot clicks + server verification) is tested
+// live by scripts/repro_craft.ts --back-to-back --reliable.
+vi.mock('../src/actions/reliable_craft.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/actions/reliable_craft.js')>('../src/actions/reliable_craft.js');
+  return {
+    ...actual,
+    craftReliably: async (bot: any, recipe: any, times: number, table: any, signal?: AbortSignal) => {
+      if (signal?.aborted) throw new actual.CraftError('Crafting was cancelled.', 'interrupted');
+      await bot.craft(recipe, times, table ?? undefined);
+    },
+  };
+});
+
 describe('Production Skills: Recipe Resolver & Closed-Loop Crafting', () => {
   const mcData = (minecraftData as any)('1.21.6');
   const Recipe = (recipeLoader as any)(mcData).Recipe;

@@ -6,6 +6,7 @@ import { ActionExecutionContext, ActionResult } from '../types/index.js';
 import { isActionContextActive } from '../agent/arbiter.js';
 import { findSafePlacementSpot, techniqueVacuumDrops, updatePathfinderMovements } from './techniques.js';
 import { workstationRegistry, WorkstationOwnershipRegistry } from './workstations.js';
+import { craftReliably, CraftError } from './reliable_craft.js';
 
 export { workstationRegistry, WorkstationOwnershipRegistry };
 
@@ -392,7 +393,10 @@ export class ClosedLoopCraftingExecutor {
     }
 
     const resolver = new RecipeResolver(this.bot);
-    const plan = resolver.resolvePlan(targetItemName, requestedCount, options);
+    // "Craft N" means N more than the bot holds now; the postcondition below checks the same net increase.
+    // resolvePlan counts what is already held toward its target, so ask it for the total.
+    const baselineTargetCount = getInventoryCount(this.bot, targetItemName);
+    const plan = resolver.resolvePlan(targetItemName, baselineTargetCount + requestedCount, options);
 
     if (!plan.feasible) {
       const missingText = plan.missingIngredients
@@ -402,7 +406,7 @@ export class ClosedLoopCraftingExecutor {
       // Calculate any partial batches feasible from currently available materials
       let partialFeasibleCount = 0;
       for (let count = requestedCount - 1; count >= 1; count--) {
-        const subPlan = resolver.resolvePlan(targetItemName, count, options);
+        const subPlan = resolver.resolvePlan(targetItemName, baselineTargetCount + count, options);
         if (subPlan.feasible) {
           partialFeasibleCount = count;
           break;
@@ -423,7 +427,6 @@ export class ClosedLoopCraftingExecutor {
       };
     }
 
-    const baselineTargetCount = getInventoryCount(this.bot, targetItemName);
     console.log(`[CRAFT_LOOP] Target: ${requestedCount}x ${targetItemName} (Current in inventory: ${baselineTargetCount}). Plan has ${plan.steps.length} step(s).`);
 
     let onAbort: (() => void) | null = null;
@@ -488,7 +491,7 @@ export class ClosedLoopCraftingExecutor {
                 if (tableRecipes && tableRecipes.length > 0) {
                   try {
                     console.log(`[CRAFT_LOOP] Crafting new crafting table on the fly from ${plankItem.name}...`);
-                    await this.bot.craft(tableRecipes[0], 1, undefined);
+                    await craftReliably(this.bot, tableRecipes[0], 1, null, ctx.abortSignal);
                     tableItem = this.bot.inventory?.items().find((i) => i.name === 'crafting_table');
                   } catch (err: any) {
                     console.warn(`[CRAFT_LOOP] On-the-fly table craft threw: ${err.message}`);
@@ -544,17 +547,23 @@ export class ClosedLoopCraftingExecutor {
 
         // Execute craft
         try {
-          if (typeof this.bot.craft === 'function') {
-            await this.bot.craft(step.recipe, step.executionCount, craftingTableToUse || undefined);
-          }
+          // craftReliably clicks one slot at a time and verifies each step with the server; Mineflayer's
+          // bot.craft pipelines its clicks and loses items when the server resends the inventory mid-craft.
+          await craftReliably(this.bot, step.recipe, step.executionCount, craftingTableToUse || null, ctx.abortSignal);
         } catch (craftErr: any) {
-          if (!isActionContextActive(ctx)) {
+          if (!isActionContextActive(ctx) || (craftErr instanceof CraftError && craftErr.cause === 'interrupted')) {
             return { status: 'interrupted', reason: 'Crafting cancelled during recipe execution.' };
           }
+          const cause = craftErr instanceof CraftError ? craftErr.cause : 'unknown';
           return {
             status: 'failed',
-            reason: `bot.craft failed for ${stepTargetName}: ${craftErr.message}`,
-            details: { failureKind: 'CRAFT_EXECUTION_ERROR', error: craftErr.message },
+            reason: `Crafting ${stepTargetName} failed: ${craftErr.message}`,
+            details: {
+              failureKind: 'CRAFT_EXECUTION_ERROR',
+              cause,
+              error: craftErr.message,
+              evidence: craftErr instanceof CraftError ? craftErr.evidence : [],
+            },
           };
         }
 

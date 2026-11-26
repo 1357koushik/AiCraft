@@ -4,6 +4,21 @@ import { inventoryCraftingActions } from '../src/actions/inventory_crafting.js';
 import { techniqueCraftPipeline } from '../src/actions/techniques.js';
 import { ActionExecutionContext } from '../src/types/index.js';
 
+// Test double for the reliable crafting routine. These tests cover the executor's logic only
+// (planning, count semantics, postcondition verification, cancellation, workstation ownership)
+// against a fake bot's bot.craft. Crafting itself (slot clicks + server verification) is tested
+// live by scripts/repro_craft.ts --back-to-back --reliable.
+vi.mock('../src/actions/reliable_craft.js', async () => {
+  const actual = await vi.importActual<typeof import('../src/actions/reliable_craft.js')>('../src/actions/reliable_craft.js');
+  return {
+    ...actual,
+    craftReliably: async (bot: any, recipe: any, times: number, table: any, signal?: AbortSignal) => {
+      if (signal?.aborted) throw new actual.CraftError('Crafting was cancelled.', 'interrupted');
+      await bot.craft(recipe, times, table ?? undefined);
+    },
+  };
+});
+
 describe('Regression: Crafting-Count Correctness & Net Delta Verification', () => {
   const createMockBot = (initialInventory: Array<{ type: number; name: string; count: number }>) => {
     let inventoryItems = initialInventory.map((i) => ({ ...i }));

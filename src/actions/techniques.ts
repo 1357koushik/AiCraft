@@ -6,6 +6,7 @@ import { distance3D } from '../utils/math.js';
 import { navigationBlacklist } from './blacklist.js';
 import { workstationRegistry } from './workstations.js';
 import { ClosedLoopCraftingExecutor } from './crafting.js';
+import { craftReliably } from './reliable_craft.js';
 import { techniqueBuildVerifiedShelter } from './shelter.js';
 
 export const SAFE_SCAFFOLD_ITEMS = new Set([
@@ -1611,11 +1612,11 @@ export async function withWorkstation<T>(
     if (!stationItem && workstationType === 'crafting_table') {
       const mcData = (bot as any).registry;
       const tableDef = mcData?.itemsByName?.['crafting_table'];
-      if (tableDef && bot.recipesFor && bot.craft) {
+      if (tableDef && bot.recipesFor) {
         const tableRecipes = bot.recipesFor(tableDef.id, null, 1, null as any);
         if (tableRecipes.length > 0) {
           try {
-            await bot.craft(tableRecipes[0], 1);
+            await craftReliably(bot, tableRecipes[0], 1, null);
             stationItem = bot.inventory?.items().find((i) => i.name === workstationType);
           } catch {}
         }
