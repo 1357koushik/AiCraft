@@ -96,3 +96,58 @@ export async function onlinePlayers(rcon: RconClient): Promise<string[]> {
   if (!match || !match[1].trim()) return [];
   return match[1].split(',').map((s) => s.trim()).filter(Boolean);
 }
+
+// ---------------------------------------------------------------------------------------------
+// World checks: blocks, regions and containers. All read-only queries; none of them changes the
+// world or prints to the server log, so they never count as assistance.
+// ---------------------------------------------------------------------------------------------
+
+export class ProbeError extends Error {}
+
+/** True if the block at x y z matches `spec`: a block id, optionally with states ("oak_stairs[facing=north]"), or a tag ("#minecraft:logs"). */
+export async function testBlock(rcon: RconClient, x: number, y: number, z: number, spec: string): Promise<boolean> {
+  const block = spec.startsWith('#') || spec.includes(':') ? spec : `minecraft:${spec}`;
+  const reply = await rcon.command(`execute if block ${Math.floor(x)} ${Math.floor(y)} ${Math.floor(z)} ${block}`);
+  if (/Test passed/i.test(reply)) return true;
+  if (/Test failed/i.test(reply)) return false;
+  throw new ProbeError(`Block check for ${spec} at ${x} ${y} ${z} failed: ${reply.trim() || '(no reply)'}`);
+}
+
+/** Largest region the oracle will check block by block. */
+export const MAX_REGION_VOLUME = 32768;
+
+/** Counts blocks in the box (inclusive corners) that match `spec`, and the box's volume. */
+export async function countRegion(
+  rcon: RconClient,
+  from: [number, number, number],
+  to: [number, number, number],
+  spec: string
+): Promise<{ matching: number; volume: number }> {
+  const lo = [0, 1, 2].map((i) => Math.floor(Math.min(from[i], to[i])));
+  const hi = [0, 1, 2].map((i) => Math.floor(Math.max(from[i], to[i])));
+  const volume = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1);
+  if (volume > MAX_REGION_VOLUME) throw new ProbeError(`Region of ${volume} blocks is larger than the ${MAX_REGION_VOLUME} the oracle checks.`);
+  let matching = 0;
+  for (let x = lo[0]; x <= hi[0]; x++) {
+    for (let y = lo[1]; y <= hi[1]; y++) {
+      for (let z = lo[2]; z <= hi[2]; z++) {
+        if (await testBlock(rcon, x, y, z, spec)) matching++;
+      }
+    }
+  }
+  return { matching, volume };
+}
+
+/** Item counts in a container block (chest, barrel, furnace...), or null if there is no container there. */
+export async function containerItems(rcon: RconClient, x: number, y: number, z: number): Promise<Record<string, number> | null> {
+  const at = `${Math.floor(x)} ${Math.floor(y)} ${Math.floor(z)}`;
+  const reply = await rcon.command(`data get block ${at} Items`);
+  if (/not a block entity|Found no elements matching/i.test(reply)) {
+    // A container that exists but is empty has no Items list.
+    const exists = await rcon.command(`data get block ${at}`);
+    return /has the following block data/i.test(exists) ? {} : null;
+  }
+  const items = parseDataGetReply(reply);
+  if (items === null) throw new ProbeError(`Could not read container at ${at}: ${reply.trim()}`);
+  return countItems(items, null);
+}

@@ -2,8 +2,8 @@ import fs from 'fs';
 import { RconClient } from './rcon.js';
 import { LogTailer, parseServerLogLine, isAssistingCommand, ServerLogEntry } from './log.js';
 import { readAdvancements, readStats, diffStats, shortId } from './files.js';
-import { snapshotPlayer, hasAdvancement, trackStat, readScore, PlayerSnapshot } from './probe.js';
-import { TaskExpectations, Evidence, CheckResult, evaluateExpectations, hasExpectations } from './expect.js';
+import { snapshotPlayer, hasAdvancement, trackStat, readScore, PlayerSnapshot, testBlock, countRegion, containerItems } from './probe.js';
+import { TaskExpectations, Evidence, CheckResult, evaluateExpectations, hasExpectations, hasWorldExpectations, WorldEvidence } from './expect.js';
 import { offlinePlayerUuid } from './uuid.js';
 
 /**
@@ -61,6 +61,8 @@ export class OracleSession {
   private deathMessages: string[] = [];
   private assists: string[] = [];
   private discrepancies: string[] = [];
+  private pollCount = 0;
+  private lastWorld: WorldEvidence | undefined;
 
   constructor(private readonly options: SessionOptions) {
     this.tailer = new LogTailer(options.logPath);
@@ -121,6 +123,24 @@ export class OracleSession {
     }
   }
 
+  /** Reads the block, region and container checks. Regions are skipped unless `withRegions` (they are slow). */
+  private async worldEvidence(withRegions: boolean): Promise<WorldEvidence | undefined> {
+    const { rcon, expect } = this.options;
+    if (!hasWorldExpectations(expect)) return undefined;
+    const blocks: boolean[] = [];
+    for (const b of expect.blocks ?? []) blocks.push(await testBlock(rcon, b.x, b.y, b.z, b.block));
+    const regions: WorldEvidence['regions'] = [];
+    if (withRegions) {
+      for (const r of expect.regions ?? []) regions.push(await countRegion(rcon, r.from, r.to, r.block));
+    } else if (this.lastWorld) {
+      regions.push(...this.lastWorld.regions);
+    }
+    const containers: WorldEvidence['containers'] = [];
+    for (const c of expect.containers ?? []) containers.push(await containerItems(rcon, c.x, c.y, c.z));
+    this.lastWorld = { blocks, regions, containers };
+    return this.lastWorld;
+  }
+
   private async liveEvidence(snapshot: PlayerSnapshot): Promise<Evidence> {
     const { rcon, bot, expect } = this.options;
     if (snapshot.online) {
@@ -131,7 +151,9 @@ export class OracleSession {
     }
     const statDeltas: Record<string, number> = {};
     for (const [key, objective] of this.statObjectives) statDeltas[key] = await readScore(rcon, bot, objective);
-    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths };
+    // Regions cost one query per block, so they are re-read every fifth poll; the rest every poll.
+    const world = await this.worldEvidence(this.pollCount++ % 5 === 0);
+    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world };
   }
 
   /** One observation: snapshot, new log lines, and a live check of the expectations. */
@@ -187,7 +209,14 @@ export class OracleSession {
       if (!fileAdvancements.has(id)) this.discrepancies.push(`advancement ${id}: selector said done, file does not`);
     }
 
+    let world: WorldEvidence | undefined;
+    try {
+      world = await this.worldEvidence(true);
+    } catch (err) {
+      this.discrepancies.push(`World check failed: ${(err as Error).message}`);
+    }
     const evidence: Evidence = {
+      world,
       items: snapshot?.items ?? {},
       advancements: fileAdvancements,
       statDeltas: fileStats,
