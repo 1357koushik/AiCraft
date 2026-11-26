@@ -1,0 +1,34 @@
+{
+  "id": "move_place",
+  "seed": "20261109",
+  "timeoutSec": 240,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "forceload add 90 90 160 110",
+    "tp dragonai 100.5 121 100.5",
+    "fill 100 120 96 150 120 104 stone",
+    "fill 100 121 96 150 128 104 air",
+    "fill 120 121 96 120 122 102 bedrock",
+    "fill 146 121 100 146 123 100 bedrock",
+    "fill 100 120 96 150 120 104 stone",
+    "fill 100 121 96 150 128 104 air",
+    "fill 120 121 96 120 122 102 bedrock",
+    "fill 146 121 100 146 123 100 bedrock",
+    "tp dragonai 100.5 121 100.5",
+    "give dragonai cobblestone 5"
+  ],
+  "plan": {
+    "notes": "Body-alone test of go_to and place. A stone strip with a 2-high bedrock wall across the way (gap at z 103-104) forces a detour; then three placements, the last one only reachable against the bedrock column's face.",
+    "steps": [
+      { "skill": "go_to", "args": { "x": 140, "y": 121, "z": 100, "range": 1 } },
+      { "skill": "place", "args": { "item": "cobblestone", "x": 138, "y": 121, "z": 100 } },
+      { "skill": "place", "args": { "item": "cobblestone", "x": 140, "y": 121, "z": 102 } },
+      { "skill": "place", "args": { "item": "cobblestone", "x": 145, "y": 122, "z": 100 } }
+    ]
+  },
+  "expect": {
+    "inventory": { "cobblestone": "==2" },
+    "stats": { "used:cobblestone": ">=3" },
+    "maxDeaths": 0
+  }
+}
