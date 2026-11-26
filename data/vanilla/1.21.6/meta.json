@@ -1,0 +1,24 @@
+{
+  "game_version": "1.21.6",
+  "data_version": 4435,
+  "protocol_version": 771,
+  "data_pack_version": 80,
+  "server_jar_sha256": "08abf384c48afb9e822144ad8a99166482857994389269e26c6a04c6c91d9171",
+  "exported_at": "2026-11-26T20:20:15.397Z",
+  "java_major_version": 22,
+  "blocks_trimmed": true,
+  "counts": {
+    "recipes": 1407,
+    "loot_tables": 1246,
+    "tags": 589,
+    "advancements": 124,
+    "enchantments": 42,
+    "structures": 34,
+    "damage_types": 49,
+    "items": 1415,
+    "blocks": 1105,
+    "registries": 87,
+    "registry_entries": 6193,
+    "block_states": 27946
+  }
+}
