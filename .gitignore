@@ -5,7 +5,7 @@ dist/
 logs/
 *.log
 
-# Runtime session memory and test fixture states (preserves data/action_contract_manifest.json)
+# Runtime session memory and test fixture states
 data/memory-*.json
 data/test_*/
 data_backup/
@@ -17,8 +17,7 @@ server/
 # External reference repositories
 references/
 
-# Observer plugin maven build artifacts
-observer-plugin/target/
+# Maven build artifacts
 target/
 
 # Environment and secrets

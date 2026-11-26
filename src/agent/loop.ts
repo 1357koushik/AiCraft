@@ -16,7 +16,7 @@ import { validateActionParams } from '../prompt/schema.js';
 import { ILLMProvider, Observation, RecentEventsState, ActionResult } from '../types/index.js';
 import { buildSystemPrompt, buildUserPrompt } from '../prompt/index.js';
 import { distance3D } from '../utils/math.js';
-import { DiagnosticSnapshot } from '../runner/metrics_aggregator.js';
+import { DiagnosticSnapshot } from '../types/index.js';
 
 export const SERVER_LAG_TOLERANCE_MS = 500;
 

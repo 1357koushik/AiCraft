@@ -9,21 +9,12 @@
     "build": "tsc",
     "test": "vitest run",
     "test:unit": "vitest run",
-    "test:mock": "vitest run tests/scenario_loop.test.ts tests/scenario_runner.test.ts tests/gather_logs_milestone.test.ts tests/action_manifest.test.ts",
-    "test:manifest": "tsx scripts/validate_manifest.ts",
-    "observer:build": "tsx scripts/build_observer.ts",
-    "test:live": "tsx scripts/run_live_scenarios.ts",
-    "test:campaign": "tsx scripts/run_campaign.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "milestone": "tsx scripts/run_milestone.ts",
     "live:connect": "tsx scripts/test_live_auto.ts",
-    "observer:verify": "tsx scripts/verify_observer_live.ts",
     "inspect:world": "tsx scripts/inspect_world.ts",
-    "manifest:generate": "tsx scripts/generate_contract_artifacts.ts",
-    "manifest:reconcile": "tsx scripts/reconcile_evidence.ts",
-    "audit:scenarios": "tsx scripts/audit_scenarios.ts",
-    "task": "tsx scripts/run_task.ts"
+    "task": "tsx scripts/run_task.ts",
+    "export:data": "tsx scripts/export_game_data.ts"
   },
   "keywords": [
     "minecraft",

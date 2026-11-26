@@ -669,4 +669,18 @@ export interface HazardSignal {
   details?: string;
 }
 
+export interface DiagnosticSnapshot {
+  timestamp: string;
+  seed: string;
+  stepNumber?: number;
+  botPosition?: { x: number; y: number; z: number };
+  botVitals?: { health: number; food: number; oxygen: number };
+  inventory?: Record<string, number>;
+  lastWorldEvents: any[];
+  activeGoal?: string;
+  activeTask?: string;
+  pathfinderGoal?: any;
+  failureReason: string;
+}
+
 
