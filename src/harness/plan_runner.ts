@@ -9,6 +9,7 @@ import { runPlan, PlanRunResult, validatePlan, SkillRegistry } from '../skills/c
 import { buildRegistry } from '../skills/registry.js';
 import { updatePathfinderMovements } from '../actions/techniques.js';
 import { installPacketTrace } from '../utils/packet_trace.js';
+import { applyProtocolFixes } from '../connection/protocol_fixes.js';
 import { logDir } from '../utils/paths.js';
 
 /**
@@ -64,6 +65,7 @@ function errorVerdict(message: string): Verdict {
 async function connectBot(port: number, username: string): Promise<Bot> {
   const bot = mineflayer.createBot({ host: '127.0.0.1', port, username, version: '1.21.6', auth: 'offline' });
   bot.loadPlugin(pathfinder);
+  applyProtocolFixes(bot);
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('The bot did not spawn within 60 s.')), 60000);
     bot.once('spawn', () => {

@@ -5,6 +5,7 @@ import { AppConfig } from '../config/index.js';
 import { AgentLogger } from '../utils/logger.js';
 import { updatePathfinderMovements } from '../actions/techniques.js';
 import { installPacketTrace } from '../utils/packet_trace.js';
+import { applyProtocolFixes } from './protocol_fixes.js';
 import { logDir } from '../utils/paths.js';
 
 export interface ConnectionEvents {
@@ -76,6 +77,7 @@ export class ConnectionManager {
       }
       this.bot = bot;
       installPacketTrace(bot, logDir('packets.ndjson'));
+      applyProtocolFixes(bot);
 
       // Attach pathfinder plugin
       bot.loadPlugin(pathfinder);
