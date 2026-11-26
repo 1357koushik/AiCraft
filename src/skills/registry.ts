@@ -9,12 +9,13 @@ import { equipSkill } from './equip.js';
 import { eatSkill } from './eat.js';
 import { storeSkill } from './store.js';
 import { takeSkill } from './take.js';
+import { useStationSkill } from './use_station.js';
 
 /**
  * The skill catalogue: every skill the step-plan runner (and later the LLM) can call.
  * A skill is added here only once it passes its live test.
  */
-export const ALL_SKILLS: SkillDefinition[] = [craftSkill, goToSkill, placeSkill, equipSkill, eatSkill, storeSkill, takeSkill, chopTreeSkill, mineSkill, collectDropsSkill];
+export const ALL_SKILLS: SkillDefinition[] = [craftSkill, goToSkill, placeSkill, equipSkill, eatSkill, storeSkill, takeSkill, chopTreeSkill, mineSkill, collectDropsSkill, useStationSkill];
 
 export function buildRegistry(skills: SkillDefinition[] = ALL_SKILLS): SkillRegistry {
   const registry: SkillRegistry = new Map();

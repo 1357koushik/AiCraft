@@ -1,0 +1,36 @@
+{
+  "id": "stations",
+  "seed": "20261109",
+  "timeoutSec": 420,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "forceload add 90 90 120 110",
+    "tp dragonai 100.5 121 100.5",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "tp dragonai 100.5 121 100.5",
+    "give dragonai furnace 1",
+    "give dragonai smoker 1",
+    "give dragonai blast_furnace 1",
+    "give dragonai stonecutter 1",
+    "give dragonai raw_iron 4",
+    "give dragonai beef 4",
+    "give dragonai raw_gold 2",
+    "give dragonai cobblestone 8",
+    "give dragonai coal 3"
+  ],
+  "plan": {
+    "notes": "Body-alone test of use_station: each station is placed from the inventory by the skill, then used. Coal is the only fuel held, so the skill picks it.",
+    "steps": [
+      { "skill": "use_station", "args": { "station": "furnace", "input": "raw_iron", "count": 4 } },
+      { "skill": "use_station", "args": { "station": "smoker", "input": "beef", "count": 4 } },
+      { "skill": "use_station", "args": { "station": "blast_furnace", "input": "raw_gold", "count": 2 } },
+      { "skill": "use_station", "args": { "station": "stonecutter", "input": "cobblestone", "count": 8, "output": "cobblestone_slab" } }
+    ]
+  },
+  "expect": {
+    "inventory": { "iron_ingot": "==4", "cooked_beef": "==4", "gold_ingot": "==2", "cobblestone_slab": "==16", "cobblestone": "==0" },
+    "stats": { "crafted:iron_ingot": ">=4", "crafted:cooked_beef": ">=4", "crafted:gold_ingot": ">=2", "crafted:cobblestone_slab": ">=16" },
+    "maxDeaths": 0
+  }
+}

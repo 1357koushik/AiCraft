@@ -67,7 +67,7 @@ export async function closeContainer(bot: Bot, win: any): Promise<void> {
   await settleInventory(bot);
 }
 
-async function stowCursor(bot: Bot, win: any): Promise<void> {
+export async function stowCursor(bot: Bot, win: any): Promise<void> {
   for (let n = 0; n < 4 && win.selectedItem; n++) {
     const held = win.selectedItem;
     const ranges: [number, number][] = [[win.inventoryStart, win.inventoryEnd], [0, win.inventoryStart]];
@@ -95,7 +95,7 @@ export function countRange(win: any, from: number, to: number): Record<string, n
 }
 
 /** Moves exactly `k` items from slot `src` to slot `dst` (same window). Returns how many arrived. */
-async function moveBetween(bot: Bot, win: any, src: number, dst: number, k: number): Promise<number> {
+export async function moveBetween(bot: Bot, win: any, src: number, dst: number, k: number): Promise<number> {
   const srcItem = at(win, src);
   const before = at(win, dst)?.count ?? 0;
   const n: number = srcItem.count;
