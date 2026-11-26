@@ -15,7 +15,8 @@
     "inspect:world": "tsx scripts/inspect_world.ts",
     "task": "tsx scripts/run_task.ts",
     "export:data": "tsx scripts/export_game_data.ts",
-    "plan": "tsx scripts/run_plan.ts"
+    "plan": "tsx scripts/run_plan.ts",
+    "coverage": "tsx scripts/check_coverage.ts"
   },
   "keywords": [
     "minecraft",

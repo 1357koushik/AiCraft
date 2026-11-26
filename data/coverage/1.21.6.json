@@ -1,0 +1,2929 @@
+{
+  "version": "1.21.6",
+  "registries": {
+    "minecraft:custom_stat": {
+      "minecraft:animals_bred": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:aviate_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:bell_ring": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:boat_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:clean_armor": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:clean_banner": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:clean_shulker_box": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:climb_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:crouch_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:damage_absorbed": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:damage_blocked_by_shield": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:damage_dealt": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:damage_dealt_absorbed": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:damage_dealt_resisted": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:damage_resisted": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:damage_taken": {
+        "sections": [
+          14,
+          15
+        ]
+      },
+      "minecraft:deaths": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:drop": {
+        "sections": [
+          3
+        ]
+      },
+      "minecraft:eat_cake_slice": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:enchant_item": {
+        "sections": [
+          17
+        ]
+      },
+      "minecraft:fall_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:fill_cauldron": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:fish_caught": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:fly_one_cm": {
+        "not_survival": "creative-mode flying; survival flight is counted as aviate_one_cm (elytra)"
+      },
+      "minecraft:happy_ghast_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:horse_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:inspect_dispenser": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:inspect_dropper": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:inspect_hopper": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_anvil": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_beacon": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_blast_furnace": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_brewingstand": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_campfire": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:interact_with_cartography_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_crafting_table": {
+        "sections": [
+          10,
+          11
+        ]
+      },
+      "minecraft:interact_with_furnace": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_grindstone": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_lectern": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_loom": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_smithing_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_smoker": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:interact_with_stonecutter": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:jump": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:leave_game": {
+        "not_survival": "technical: counts disconnects of the account"
+      },
+      "minecraft:minecart_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:mob_kills": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:open_barrel": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:open_chest": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:open_enderchest": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:open_shulker_box": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:pig_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:play_noteblock": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:play_record": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:play_time": {
+        "not_survival": "technical: wall-clock play time"
+      },
+      "minecraft:player_kills": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:pot_flower": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:raid_trigger": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:raid_win": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:sleep_in_bed": {
+        "sections": [
+          9,
+          28
+        ]
+      },
+      "minecraft:sneak_time": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:sprint_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:strider_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:swim_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:talked_to_villager": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:target_hit": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:time_since_death": {
+        "sections": [
+          15,
+          28
+        ]
+      },
+      "minecraft:time_since_rest": {
+        "sections": [
+          15,
+          28
+        ]
+      },
+      "minecraft:total_world_time": {
+        "not_survival": "technical: world age counter"
+      },
+      "minecraft:traded_with_villager": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:trigger_trapped_chest": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:tune_noteblock": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:use_cauldron": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:walk_on_water_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:walk_one_cm": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:walk_under_water_one_cm": {
+        "sections": [
+          6
+        ]
+      }
+    },
+    "minecraft:trigger_type": {
+      "minecraft:allay_drop_item_on_block": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:any_block_use": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:avoid_vibration": {
+        "sections": [
+          26
+        ]
+      },
+      "minecraft:bee_nest_destroyed": {
+        "sections": [
+          9,
+          13
+        ]
+      },
+      "minecraft:bred_animals": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:brewed_potion": {
+        "sections": [
+          18
+        ]
+      },
+      "minecraft:changed_dimension": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:channeled_lightning": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:construct_beacon": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:consume_item": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:crafter_recipe_crafted": {
+        "sections": [
+          10,
+          19
+        ]
+      },
+      "minecraft:cured_zombie_villager": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:default_block_use": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:effects_changed": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:enchanted_item": {
+        "sections": [
+          17
+        ]
+      },
+      "minecraft:enter_block": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:entity_hurt_player": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:entity_killed_player": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:fall_after_explosion": {
+        "sections": [
+          12,
+          15
+        ]
+      },
+      "minecraft:fall_from_height": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:filled_bucket": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:fishing_rod_hooked": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:hero_of_the_village": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:impossible": {
+        "not_survival": "never fires; used only for advancements granted by command or datapack"
+      },
+      "minecraft:inventory_changed": {
+        "sections": [
+          7,
+          21
+        ]
+      },
+      "minecraft:item_durability_changed": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:item_used_on_block": {
+        "sections": [
+          8,
+          12
+        ]
+      },
+      "minecraft:kill_mob_near_sculk_catalyst": {
+        "gap": "sculk catalyst: killing a mob next to it, spreading sculk and the xp it eats are not in the catalogue"
+      },
+      "minecraft:killed_by_arrow": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:levitation": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:lightning_strike": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:location": {
+        "sections": [
+          20
+        ]
+      },
+      "minecraft:nether_travel": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:placed_block": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:player_generates_container_loot": {
+        "sections": [
+          7,
+          20
+        ]
+      },
+      "minecraft:player_hurt_entity": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:player_interacted_with_entity": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:player_killed_entity": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:player_sheared_equipment": {
+        "sections": [
+          13,
+          7
+        ]
+      },
+      "minecraft:recipe_crafted": {
+        "sections": [
+          11
+        ]
+      },
+      "minecraft:recipe_unlocked": {
+        "not_survival": "recipe-book bookkeeping, a side effect of other actions rather than an action"
+      },
+      "minecraft:ride_entity_in_lava": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:shot_crossbow": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:slept_in_bed": {
+        "sections": [
+          9,
+          28
+        ]
+      },
+      "minecraft:slide_down_block": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:started_riding": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:summoned_entity": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:tame_animal": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:target_hit": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:thrown_item_picked_up_by_entity": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:thrown_item_picked_up_by_player": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:tick": {
+        "not_survival": "fires every tick; used for always-true advancements such as roots"
+      },
+      "minecraft:used_ender_eye": {
+        "sections": [
+          20
+        ]
+      },
+      "minecraft:used_totem": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:using_item": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:villager_trade": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:voluntary_exile": {
+        "sections": [
+          13
+        ]
+      }
+    },
+    "minecraft:block_type": {
+      "minecraft:air": {
+        "not_survival": "technical: empty space, no behaviour"
+      },
+      "minecraft:amethyst": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:amethyst_cluster": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:anvil": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:attached_stem": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:azalea": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:bamboo_sapling": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:bamboo_stalk": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:banner": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:barrel": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:barrier": {
+        "not_survival": "creative-only, not obtainable in survival"
+      },
+      "minecraft:base_coral_fan": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:base_coral_plant": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:base_coral_wall_fan": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:beacon": {
+        "sections": [
+          8,
+          10
+        ]
+      },
+      "minecraft:bed": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:beehive": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:beetroot": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:bell": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:big_dripleaf": {
+        "gap": "big dripleaf: tilts and drops when stood on, usable as a platform or slow-fall step; not listed under blocks that change movement"
+      },
+      "minecraft:big_dripleaf_stem": {
+        "gap": "big dripleaf stem: part of the dripleaf above, same missing behaviour"
+      },
+      "minecraft:blast_furnace": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:block": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:bonemealable_feature_placer": {
+        "sections": [
+          7,
+          16
+        ]
+      },
+      "minecraft:brewing_stand": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:brushable": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:bubble_column": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:budding_amethyst": {
+        "gap": "budding amethyst: growth of amethyst clusters in a geode (a renewable resource) is not in section 16 or anywhere else"
+      },
+      "minecraft:bush": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:button": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:cactus": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:cactus_flower": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:cake": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:calibrated_sculk_sensor": {
+        "sections": [
+          9,
+          26
+        ]
+      },
+      "minecraft:campfire": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:candle": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:candle_cake": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:carpet": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:carrot": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:cartography_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:cauldron": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:cave_vines": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:cave_vines_plant": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:ceiling_hanging_sign": {
+        "sections": [
+          8,
+          9
+        ]
+      },
+      "minecraft:chain": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:chest": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:chiseled_book_shelf": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:chorus_flower": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:chorus_plant": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:cocoa": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:colored_falling": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:command": {
+        "not_survival": "operator only (command blocks)"
+      },
+      "minecraft:comparator": {
+        "sections": [
+          9,
+          19
+        ]
+      },
+      "minecraft:composter": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:concrete_powder": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:conduit": {
+        "sections": [
+          8,
+          10
+        ]
+      },
+      "minecraft:copper_bulb_block": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:coral": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:coral_fan": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:coral_plant": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:coral_wall_fan": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:crafter": {
+        "sections": [
+          10,
+          19
+        ]
+      },
+      "minecraft:crafting_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:creaking_heart": {
+        "sections": [
+          7,
+          14
+        ]
+      },
+      "minecraft:crop": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:crying_obsidian": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:daylight_detector": {
+        "sections": [
+          9,
+          19
+        ]
+      },
+      "minecraft:decorated_pot": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:detector_rail": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:dirt_path": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:dispenser": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:door": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:double_plant": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:dragon_egg": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:dried_ghast": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:drop_experience": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:dropper": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:dry_vegetation": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:enchantment_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:end_gateway": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:end_portal": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:end_portal_frame": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:end_rod": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:ender_chest": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:eyeblossom": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:farm": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:fence": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:fence_gate": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:fire": {
+        "sections": [
+          24
+        ]
+      },
+      "minecraft:firefly_bush": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:fletching_table": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:flower": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:flower_bed": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:flower_pot": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:frogspawn": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:frosted_ice": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:fungus": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:furnace": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:glazed_terracotta": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:glow_lichen": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:grass": {
+        "sections": [
+          7,
+          16
+        ]
+      },
+      "minecraft:grindstone": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:half_transparent": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:hanging_moss": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:hanging_roots": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:hay": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:heavy_core": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:honey": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:hopper": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:huge_mushroom": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:ice": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:infested": {
+        "sections": [
+          7,
+          14
+        ]
+      },
+      "minecraft:infested_rotated_pillar": {
+        "sections": [
+          7,
+          14
+        ]
+      },
+      "minecraft:iron_bars": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:jack_o_lantern": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:jigsaw": {
+        "not_survival": "operator only, worldgen helper block"
+      },
+      "minecraft:jukebox": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:kelp": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:kelp_plant": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:ladder": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:lantern": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:lava_cauldron": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:layered_cauldron": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:leaf_litter": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:lectern": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:lever": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:light": {
+        "not_survival": "creative-only, not obtainable in survival"
+      },
+      "minecraft:lightning_rod": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:liquid": {
+        "sections": [
+          24
+        ]
+      },
+      "minecraft:loom": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:magma": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:mangrove_leaves": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:mangrove_propagule": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:mangrove_roots": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:mossy_carpet": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:moving_piston": {
+        "not_survival": "technical: internal block that exists only while a piston moves"
+      },
+      "minecraft:mud": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:multiface": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:mushroom": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:mycelium": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:nether_portal": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:nether_sprouts": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:nether_wart": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:netherrack": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:note": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:nylium": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:observer": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:piglinwallskull": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:piston_base": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:piston_head": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:pitcher_crop": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:player_head": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:player_wall_head": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:pointed_dripstone": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:potato": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:powder_snow": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:powered": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:powered_rail": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:pressure_plate": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:pumpkin": {
+        "sections": [
+          7,
+          8,
+          16
+        ]
+      },
+      "minecraft:rail": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:redstone_lamp": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:redstone_ore": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:redstone_torch": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:redstone_wall_torch": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:redstone_wire": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:repeater": {
+        "sections": [
+          9,
+          19
+        ]
+      },
+      "minecraft:respawn_anchor": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:rooted_dirt": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:roots": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:rotated_pillar": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:sand": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:sapling": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:scaffolding": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:sculk": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:sculk_catalyst": {
+        "gap": "sculk catalyst: spreading sculk from nearby deaths, its xp use and its place in ancient cities are not in the catalogue"
+      },
+      "minecraft:sculk_sensor": {
+        "sections": [
+          9,
+          26
+        ]
+      },
+      "minecraft:sculk_shrieker": {
+        "sections": [
+          9,
+          26
+        ]
+      },
+      "minecraft:sculk_vein": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:sea_pickle": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:seagrass": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:short_dry_grass": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:shulker_box": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:skull": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:slab": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:slime": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:small_dripleaf": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:smithing_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:smoker": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:sniffer_egg": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:snow_layer": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:snowy_dirt": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:soul_fire": {
+        "sections": [
+          24
+        ]
+      },
+      "minecraft:soul_sand": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:spawner": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:sponge": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:spore_blossom": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:stained_glass": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:stained_glass_pane": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:stair": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:standing_sign": {
+        "sections": [
+          8,
+          9
+        ]
+      },
+      "minecraft:stem": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:stonecutter": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:structure": {
+        "not_survival": "operator only (structure block)"
+      },
+      "minecraft:structure_void": {
+        "not_survival": "creative-only, not obtainable in survival"
+      },
+      "minecraft:sugar_cane": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:sweet_berry_bush": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:tall_dry_grass": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:tall_flower": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:tall_grass": {
+        "sections": [
+          7,
+          16
+        ]
+      },
+      "minecraft:tall_seagrass": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:target": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:test": {
+        "not_survival": "debug: game test framework block"
+      },
+      "minecraft:test_instance": {
+        "not_survival": "debug: game test framework block"
+      },
+      "minecraft:tinted_glass": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:tinted_particle_leaves": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:tnt": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:torch": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:torchflower_crop": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:transparent": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:trapdoor": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:trapped_chest": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:trial_spawner": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:trip_wire_hook": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:tripwire": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:turtle_egg": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:twisting_vines": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:twisting_vines_plant": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:untinted_particle_leaves": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:vault": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:vine": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:wall": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:wall_banner": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:wall_hanging_sign": {
+        "sections": [
+          8,
+          9
+        ]
+      },
+      "minecraft:wall_sign": {
+        "sections": [
+          8,
+          9
+        ]
+      },
+      "minecraft:wall_skull": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:wall_torch": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:waterlily": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:waterlogged_transparent": {
+        "sections": [
+          7,
+          8
+        ]
+      },
+      "minecraft:weathering_copper_bulb": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:weathering_copper_door": {
+        "sections": [
+          9,
+          19
+        ]
+      },
+      "minecraft:weathering_copper_full": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:weathering_copper_grate": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:weathering_copper_slab": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:weathering_copper_stair": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:weathering_copper_trap_door": {
+        "sections": [
+          9,
+          19
+        ]
+      },
+      "minecraft:web": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:weeping_vines": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:weeping_vines_plant": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:weighted_pressure_plate": {
+        "sections": [
+          19
+        ]
+      },
+      "minecraft:wet_sponge": {
+        "sections": [
+          9
+        ]
+      },
+      "minecraft:wither_rose": {
+        "sections": [
+          7,
+          15
+        ]
+      },
+      "minecraft:wither_skull": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:wither_wall_skull": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:wool_carpet": {
+        "sections": [
+          8
+        ]
+      }
+    },
+    "minecraft:menu": {
+      "minecraft:anvil": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:beacon": {
+        "sections": [
+          10,
+          8
+        ]
+      },
+      "minecraft:blast_furnace": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:brewing_stand": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:cartography_table": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:crafter_3x3": {
+        "sections": [
+          10,
+          19
+        ]
+      },
+      "minecraft:crafting": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:enchantment": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:furnace": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:generic_3x3": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:generic_9x1": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:generic_9x2": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:generic_9x3": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:generic_9x4": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:generic_9x5": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:generic_9x6": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:grindstone": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:hopper": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:lectern": {
+        "sections": [
+          10,
+          9
+        ]
+      },
+      "minecraft:loom": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:merchant": {
+        "sections": [
+          10,
+          13
+        ]
+      },
+      "minecraft:shulker_box": {
+        "sections": [
+          10,
+          21
+        ]
+      },
+      "minecraft:smithing": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:smoker": {
+        "sections": [
+          10
+        ]
+      },
+      "minecraft:stonecutter": {
+        "sections": [
+          10
+        ]
+      }
+    },
+    "minecraft:entity_type": {
+      "minecraft:acacia_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:acacia_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:allay": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:area_effect_cloud": {
+        "sections": [
+          12,
+          14
+        ]
+      },
+      "minecraft:armadillo": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:armor_stand": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:arrow": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:axolotl": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:bamboo_chest_raft": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:bamboo_raft": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:bat": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:bee": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:birch_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:birch_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:blaze": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:block_display": {
+        "not_survival": "operator only: display entity created by commands"
+      },
+      "minecraft:bogged": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:breeze": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:breeze_wind_charge": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:camel": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:cat": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:cave_spider": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:cherry_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:cherry_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:chest_minecart": {
+        "sections": [
+          6,
+          21
+        ]
+      },
+      "minecraft:chicken": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:cod": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:command_block_minecart": {
+        "not_survival": "operator only; not obtainable in survival"
+      },
+      "minecraft:cow": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:creaking": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:creeper": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:dark_oak_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:dark_oak_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:dolphin": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:donkey": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:dragon_fireball": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:drowned": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:egg": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:elder_guardian": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:end_crystal": {
+        "sections": [
+          8,
+          14
+        ]
+      },
+      "minecraft:ender_dragon": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:ender_pearl": {
+        "sections": [
+          6,
+          12
+        ]
+      },
+      "minecraft:enderman": {
+        "sections": [
+          14,
+          26
+        ]
+      },
+      "minecraft:endermite": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:evoker": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:evoker_fangs": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:experience_bottle": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:experience_orb": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:eye_of_ender": {
+        "sections": [
+          12,
+          20
+        ]
+      },
+      "minecraft:falling_block": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:fireball": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:firework_rocket": {
+        "sections": [
+          6,
+          12
+        ]
+      },
+      "minecraft:fishing_bobber": {
+        "sections": [
+          16
+        ]
+      },
+      "minecraft:fox": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:frog": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:furnace_minecart": {
+        "sections": [
+          6
+        ]
+      },
+      "minecraft:ghast": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:giant": {
+        "not_survival": "unused mob, summon only"
+      },
+      "minecraft:glow_item_frame": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:glow_squid": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:goat": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:guardian": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:happy_ghast": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:hoglin": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:hopper_minecart": {
+        "sections": [
+          6,
+          21
+        ]
+      },
+      "minecraft:horse": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:husk": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:illusioner": {
+        "not_survival": "no natural spawn in 1.21.6, summon only"
+      },
+      "minecraft:interaction": {
+        "not_survival": "operator only: interaction entity created by commands"
+      },
+      "minecraft:iron_golem": {
+        "sections": [
+          8,
+          13
+        ]
+      },
+      "minecraft:item": {
+        "sections": [
+          7
+        ]
+      },
+      "minecraft:item_display": {
+        "not_survival": "operator only: display entity created by commands"
+      },
+      "minecraft:item_frame": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:jungle_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:jungle_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:leash_knot": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:lightning_bolt": {
+        "sections": [
+          15
+        ]
+      },
+      "minecraft:lingering_potion": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:llama": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:llama_spit": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:magma_cube": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:mangrove_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:mangrove_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:marker": {
+        "not_survival": "operator only: invisible marker entity created by commands"
+      },
+      "minecraft:minecart": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:mooshroom": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:mule": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:oak_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:oak_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:ocelot": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:ominous_item_spawner": {
+        "not_survival": "technical: internal entity of ominous trial spawners"
+      },
+      "minecraft:painting": {
+        "sections": [
+          8
+        ]
+      },
+      "minecraft:pale_oak_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:pale_oak_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:panda": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:parrot": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:phantom": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:pig": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:piglin": {
+        "sections": [
+          13,
+          14
+        ]
+      },
+      "minecraft:piglin_brute": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:pillager": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:player": {
+        "sections": [
+          22
+        ]
+      },
+      "minecraft:polar_bear": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:pufferfish": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:rabbit": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:ravager": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:salmon": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:sheep": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:shulker": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:shulker_bullet": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:silverfish": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:skeleton": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:skeleton_horse": {
+        "sections": [
+          13,
+          14
+        ]
+      },
+      "minecraft:slime": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:small_fireball": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:sniffer": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:snow_golem": {
+        "sections": [
+          8,
+          13
+        ]
+      },
+      "minecraft:snowball": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:spawner_minecart": {
+        "not_survival": "not obtainable in survival (summon only; a spawner cannot be picked up)"
+      },
+      "minecraft:spectral_arrow": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:spider": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:splash_potion": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:spruce_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:spruce_chest_boat": {
+        "sections": [
+          6,
+          8
+        ]
+      },
+      "minecraft:squid": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:stray": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:strider": {
+        "sections": [
+          6,
+          13
+        ]
+      },
+      "minecraft:tadpole": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:text_display": {
+        "not_survival": "operator only: display entity created by commands"
+      },
+      "minecraft:tnt": {
+        "sections": [
+          24
+        ]
+      },
+      "minecraft:tnt_minecart": {
+        "sections": [
+          6,
+          24
+        ]
+      },
+      "minecraft:trader_llama": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:trident": {
+        "sections": [
+          12
+        ]
+      },
+      "minecraft:tropical_fish": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:turtle": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:vex": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:villager": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:vindicator": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:wandering_trader": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:warden": {
+        "sections": [
+          14,
+          26
+        ]
+      },
+      "minecraft:wind_charge": {
+        "sections": [
+          12,
+          14
+        ]
+      },
+      "minecraft:witch": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:wither": {
+        "sections": [
+          8,
+          14
+        ]
+      },
+      "minecraft:wither_skeleton": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:wither_skull": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:wolf": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:zoglin": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:zombie": {
+        "sections": [
+          14
+        ]
+      },
+      "minecraft:zombie_horse": {
+        "sections": [
+          13,
+          14
+        ]
+      },
+      "minecraft:zombie_villager": {
+        "sections": [
+          13
+        ]
+      },
+      "minecraft:zombified_piglin": {
+        "sections": [
+          13
+        ]
+      }
+    }
+  }
+}
