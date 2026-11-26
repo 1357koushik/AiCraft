@@ -5,11 +5,18 @@
  *   npm run task -- "craft a wooden pickaxe" --seed 42 --timeout 5m --expect-item "wooden_pickaxe>=1"
  *   (quote comparisons: an unquoted > is a shell redirect)
  *
- * Exit code: 0 PASS · 1 FAIL / ASSISTED / UNVERIFIED · 2 ERROR
+ *   npm run task -- tasks/wooden_pickaxe.json --repeat 5 --seeds 1,2,3
+ *
+ * Exit code (single run): 0 PASS · 1 FAIL / ASSISTED / UNVERIFIED · 2 ERROR
+ * Exit code (batch, more than one run): 0 if every run is PASS, else 1
  */
 import fs from 'fs';
+import path from 'path';
 import { loadTaskFile, runTask, TaskSpec } from '../src/harness/task_runner.js';
 import { TaskExpectations } from '../src/oracle/expect.js';
+import { BatchRunResult, formatBatchMarkdown, summarizeBatch } from '../src/harness/batch.js';
+import type { Verdict } from '../src/oracle/session.js';
+import { logDir } from '../src/utils/paths.js';
 
 function usage(): never {
   console.log(`Usage:
@@ -17,6 +24,8 @@ function usage(): never {
 
 Options:
   --seed <seed>                  World seed (default: task file, else random)
+  --seeds <a,b,c>                Run every listed seed (replaces --seed; task file is not changed)
+  --repeat <n>                   Run each seed n times, sequentially (default 1); writes a batch summary
   --timeout <sec|Nm|Nh>          Time limit (default: task file, else 10m)
   --id <name>                    Task id used in the run folder name
   --expect-item "<id><op><n>"      e.g. "stone_pickaxe>=1" (repeatable; keep the quotes)
@@ -36,6 +45,23 @@ function parseDuration(text: string): number {
   return match[2] === 'h' ? n * 3600 : match[2] === 'm' ? n * 60 : n;
 }
 
+function errorVerdict(message: string): Verdict {
+  const now = new Date().toISOString();
+  return {
+    status: 'ERROR',
+    reason: message,
+    checks: [],
+    assists: [],
+    deaths: 0,
+    deathMessages: [],
+    discrepancies: [],
+    startedAt: now,
+    endedAt: now,
+    durationSec: 0,
+    finalSnapshot: null,
+  };
+}
+
 function splitComparison(text: string): [string, string] {
   const match = text.match(/^([^<>=]+)((?:>=|<=|==|=|>|<).+)$/);
   if (!match) throw new Error(`Expected <name><op><number>, got "${text}"`);
@@ -53,6 +79,8 @@ async function main() {
       : { id: 'adhoc', text: target, timeoutSec: 600, expect: {} };
   const expect: TaskExpectations = spec.expect ?? {};
   let keepServer = false;
+  let repeat = 1;
+  let seeds: string[] | undefined;
 
   while (args.length) {
     const flag = args.shift()!;
@@ -64,6 +92,17 @@ async function main() {
     switch (flag) {
       case '--seed':
         spec.seed = value();
+        break;
+      case '--seeds':
+        seeds = value()
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean);
+        if (seeds.length === 0) throw new Error('--seeds needs at least one seed');
+        break;
+      case '--repeat':
+        repeat = parseInt(value(), 10);
+        if (!Number.isInteger(repeat) || repeat < 1) throw new Error('--repeat must be a positive integer');
         break;
       case '--timeout':
         spec.timeoutSec = parseDuration(value());
@@ -103,8 +142,41 @@ async function main() {
   }
   spec.expect = expect;
 
-  const { verdict } = await runTask(spec, { keepServer });
-  process.exit(verdict.status === 'PASS' ? 0 : verdict.status === 'ERROR' ? 2 : 1);
+  const seedList: Array<string | undefined> = seeds ?? [spec.seed];
+  if (seedList.length * repeat === 1) {
+    const { verdict } = await runTask({ ...spec, seed: seedList[0] }, { keepServer });
+    process.exit(verdict.status === 'PASS' ? 0 : verdict.status === 'ERROR' ? 2 : 1);
+  }
+
+  // Batch: one server at a time; a run that throws is recorded as ERROR and the batch continues.
+  const total = seedList.length * repeat;
+  const results: BatchRunResult[] = [];
+  let index = 0;
+  for (const seed of seedList) {
+    for (let i = 1; i <= repeat; i++) {
+      index++;
+      console.log(`[batch] run ${index}/${total} (seed ${seed ?? 'random'}, repeat ${i}/${repeat})`);
+      try {
+        const run = await runTask({ ...spec, seed }, { keepServer: keepServer && index === total });
+        results.push({ runId: run.runId, seed, verdict: run.verdict });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[batch] run ${index}/${total} threw: ${message}`);
+        results.push({ runId: `error_${index}`, seed, verdict: errorVerdict(`runTask threw: ${message}`) });
+      }
+    }
+  }
+
+  const summary = summarizeBatch(results);
+  const markdown = formatBatchMarkdown(summary, spec.id);
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '_');
+  const batchDir = path.resolve(logDir('runs', `batch_${stamp}_${spec.id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40)}`));
+  fs.mkdirSync(batchDir, { recursive: true });
+  fs.writeFileSync(path.join(batchDir, 'summary.json'), JSON.stringify({ taskId: spec.id, ...summary }, null, 2));
+  fs.writeFileSync(path.join(batchDir, 'summary.md'), markdown);
+  console.log(`\n${markdown}`);
+  console.log(`[batch] summary written to ${batchDir}`);
+  process.exit(summary.overall.PASS === summary.overall.runs ? 0 : 1);
 }
 
 main().catch((err) => {
