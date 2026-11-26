@@ -1,0 +1,91 @@
+import { z } from 'zod';
+import { StepSchema, SkillRegistry, validatePlan, StepPlan } from '../skills/contract.js';
+
+/**
+ * What the LLM sends back at each decision point (ROADMAP.md section 4): a short list of steps, or a
+ * question for the owner, or giving up, plus its own running notes for the task. Data only, never code.
+ */
+
+export const DoneWhenSchema = z
+  .object({
+    inventory: z.record(z.string().regex(/^(>=|<=|==|=|>|<)?\s*\d+$/)).optional(),
+  })
+  .strict();
+export type DoneWhen = z.infer<typeof DoneWhenSchema>;
+
+export const DecisionSchema = z
+  .object({
+    notes: z.string().max(1200).default(''),
+    steps: z.array(StepSchema).max(12).default([]),
+    done_when: DoneWhenSchema.optional(),
+    ask_owner: z.string().max(300).optional(),
+    give_up: z.string().max(300).optional(),
+  })
+  .strict();
+export type Decision = z.infer<typeof DecisionSchema>;
+
+export type ParsedDecision =
+  | { ok: true; decision: Decision; plan: StepPlan | null }
+  | { ok: false; error: string };
+
+/** Pulls the first JSON object out of a model reply (models sometimes wrap it in prose or code fences). */
+export function extractJson(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const body = fenced ? fenced[1] : text;
+  const start = body.indexOf('{');
+  if (start < 0) throw new Error('no JSON object in the reply');
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < body.length; i++) {
+    const ch = body[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return JSON.parse(body.slice(start, i + 1));
+  }
+  throw new Error('unterminated JSON object in the reply');
+}
+
+/**
+ * Models often write a step's arguments next to "skill" instead of inside "args"
+ * ({"skill":"craft","item":"stick","count":4}). Fold such keys into args; nothing is invented, and the
+ * skill's own schema still validates them.
+ */
+function normalizeSteps(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || !Array.isArray((raw as any).steps)) return raw;
+  const steps = (raw as any).steps.map((step: any) => {
+    if (!step || typeof step !== 'object' || typeof step.skill !== 'string') return step;
+    const { skill, args, ...rest } = step;
+    const merged = { ...(args && typeof args === 'object' ? args : {}), ...rest };
+    return { skill, args: merged };
+  });
+  return { ...(raw as any), steps };
+}
+
+/** Parses and validates a reply against the schema and the skill catalogue. */
+export function parseDecision(text: string, registry: SkillRegistry, knownItems: Set<string>): ParsedDecision {
+  let raw: unknown;
+  try {
+    raw = extractJson(text);
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+  const parsed = DecisionSchema.safeParse(normalizeSteps(raw));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => `${i.path.join('.') || 'reply'}: ${i.message}`).join('; ') };
+  const d = parsed.data;
+  const choices = [d.steps.length > 0, Boolean(d.ask_owner), Boolean(d.give_up)].filter(Boolean).length;
+  if (choices !== 1) return { ok: false, error: 'send exactly one of: a non-empty "steps" list, "ask_owner", or "give_up"' };
+  for (const item of Object.keys(d.done_when?.inventory ?? {})) {
+    if (!knownItems.has(item.replace(/^minecraft:/, ''))) return { ok: false, error: `done_when names an unknown item "${item}"` };
+  }
+  if (!d.steps.length) return { ok: true, decision: d, plan: null };
+  const v = validatePlan({ steps: d.steps, notes: d.notes }, registry);
+  if (!v.ok) return { ok: false, error: v.errors.join('; ') };
+  return { ok: true, decision: d, plan: v.plan };
+}

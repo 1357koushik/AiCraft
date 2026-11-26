@@ -1,0 +1,14 @@
+{
+  "id": "stone_pickaxe",
+  "text": "craft a stone pickaxe",
+  "seed": "20261109",
+  "timeoutSec": 600,
+  "callBudget": 12,
+  "setup": [],
+  "expect": {
+    "inventory": { "stone_pickaxe": ">=1" },
+    "advancements": ["story/upgrade_tools"],
+    "stats": { "crafted:stone_pickaxe": ">=1" },
+    "maxDeaths": 0
+  }
+}
