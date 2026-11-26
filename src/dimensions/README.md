@@ -2,7 +2,7 @@
 
 Nothing in the running agent (`src/main.ts` → `agent/loop.ts` → `actions/registry.ts`) imports this folder. Only unit tests with mocked bots touch it, so none of it has been shown to work in the game.
 
-Known problems, from the 2026-11-09 audit. Each one is scheduled for rewrite in ROADMAP.md Phases 7-8:
+Known problems, from the 2026-11-09 audit. Each one is scheduled for rewrite in ROADMAP.md Phase 8:
 
 **Report success without checking the world**
 - `nether/portal_builder.ts` counts failed placements as placed.

@@ -1,6 +1,6 @@
 # Project Status
 
-What has actually been shown to work, and how we know. Last reviewed **2026-11-09** against the code, tests and server-side evidence, not against earlier reports or commit titles.
+What has actually been shown to work, and how we know. Last reviewed **2026-11-11** against the code, tests and server-side evidence, not against earlier reports or commit titles.
 
 ## Labels
 | Label | Meaning |
@@ -16,8 +16,8 @@ What has actually been shown to work, and how we know. Last reviewed **2026-11-0
 | Stage | Status | Evidence |
 | --- | --- | --- |
 | Connect / reconnect to the server | **Live** | Every harness run |
-| Wood → wooden pickaxe | **Server-judged PASS** (1 of 1 runs) | `logs/runs/run_20261109_135152_wooden_pickaxe`: seed 20261109, fresh world, no commands, 30 s; RCON inventory and stats file both show `crafted:wooden_pickaxe +1` |
-| Wooden → stone pickaxe | **Server-judged FAIL** (1 of 1 runs) | `logs/runs/run_20261109_135253_stone_pickaxe`: 900 s timeout, no pickaxe at all at the end (see Known issues) |
+| Wood → wooden pickaxe | **Server-judged PASS** (1 of 1 runs) | `logs/runs/run_20261109_135152_wooden_pickaxe`: seed 20261109, fresh world, no commands, 30 s; RCON inventory and stats file both show `crafted:wooden_pickaxe +1`. **Not reliable:** the stone pickaxe run below, on the same seed, needed a wooden pickaxe first and never made one. The passing run also crafted an `oak_button` by mistake |
+| Wooden → stone pickaxe | **Server-judged FAIL** (1 of 1 runs) | `logs/runs/run_20261109_135253_stone_pickaxe`: 900 s timeout, no pickaxe of any kind at the end (see Known issues). Two old worlds from 2026-10-23 hold a crafted stone pickaxe, from runs with no command detection and before the planner rewrite |
 | Iron, armor, food, diamonds, obsidian | **Unit only** | Code in `src/actions/` and `src/actions/mining/`, never run live |
 | Nether, fortress, blaze, piglin, ender pearls | **Not connected** | `src/dimensions/nether/`, `src/actions/combat/{enderman,wither_skeleton}_tactics.ts`; see `src/dimensions/README.md` |
 | Stronghold, End, Ender Dragon | **Not connected** | `src/dimensions/stronghold/`, `src/dimensions/the_end/` |
@@ -48,12 +48,16 @@ Older milestone reports in `logs/survival/` predate the harness. Milestone 1 the
 
 ## Known issues
 
-- **Crafting desync (seen live).** In the stone pickaxe run:
+- **The stone pickaxe plan skips gathering wood (seen live, first cause of the failed run).** Its first task is a bare `craft_item wooden_pickaxe` with no prerequisites (`src/agent/goals.ts:500-506`). With an empty inventory it failed twice in two seconds and was marked `failed`.
+- **No recovery after a failed task.** The failure cascades to every later task (`goals.ts:816-819, 923`) and the LLM takes over one action at a time. In that run it made 109 calls without progress.
+- **Crafting loses items (seen live).** In the stone pickaxe run:
+  - a stick craft from planks produced 0 sticks
   - 16 crafts failed with `bot.craft … Event updateSlot:0 did not fire within timeout of 20000ms`, and several reported "inventory only increased by 0".
   - The server's stats show 24 logs picked up and 12 planks crafted, with nothing dropped, yet the bot ended with 1 log. Items are probably stuck in a crafting window that never closed properly.
-  - It never crafted a stick.
-  - This blocks everything past wood and is the first Phase 3 fix (ROADMAP.md).
-- **Planner errors in the same run:** "Cannot craft 1x wooden_pickaxe: missing required ingredients (1x wooden_pickaxe)" and "(1x crafting_table)" while holding one.
+  - It never crafted a stick and never placed the crafting table.
+  - These three issues block everything past wood. The crafting fix is Phase 1 in ROADMAP.md; the plan and recovery problems go away in Phase 2, when the LLM step-plan loop replaces the hand-written plans.
+- **The judge has only four runs behind it**, and it can only check bot inventory, advancements, stat increases, final dimension and deaths. Items in an open crafting grid or on the cursor are not counted.
+- **Crafting error messages in the same run:** "Cannot craft 1x wooden_pickaxe: missing required ingredients (1x wooden_pickaxe)" and "(1x crafting_table)" while holding one.
 - **Risky movement:** the bot spent a lot of time underwater in that run (236 m walked underwater, 6 hearts of damage taken).
 - **Type-check gaps:** `tsconfig.json` type-checks only `src/`. Strict `tsc` over `tests/`, `scripts/` and `tools/` reports about 80 existing errors, mostly mock objects in tests.
 - **Ender Dragon helpers:** they don't move the bot to the fountain, they write `bot.entity.yaw` directly, and several late-game helpers still report success without checking (listed in `src/dimensions/README.md`).
