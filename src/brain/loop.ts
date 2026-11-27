@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import { HandoverTally, GivenFn } from './handovers.js';
 import { Vec3 } from 'vec3';
 import { runPlan, SkillRegistry, StepRecord } from '../skills/contract.js';
 import { parseComparison, compare } from '../oracle/expect.js';
@@ -66,9 +67,13 @@ function blockMatches(bot: Bot, x: number, y: number, z: number, want: string): 
 }
 
 /** Checks the done-condition from what the bot can see. Only code decides that a task is finished. */
-export function isDone(bot: Bot, doneWhen: DoneWhen | undefined): boolean {
+export function isDone(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn): boolean {
   if (!doneWhen) return false;
   const parts: boolean[] = [];
+  if (doneWhen.given) {
+    const g = doneWhen.given;
+    parts.push(Boolean(given) && Object.entries(g.items).every(([item, n]) => given!(g.player, item) >= n));
+  }
   if (doneWhen.inventory && Object.keys(doneWhen.inventory).length) {
     const have = inventory(bot);
     parts.push(Object.entries(doneWhen.inventory).every(([item, expr]) => compare(have[item.replace(/^minecraft:/, '')] ?? 0, parseComparison(expr))));
@@ -82,10 +87,11 @@ export function isDone(bot: Bot, doneWhen: DoneWhen | undefined): boolean {
 }
 
 /** How far the bot is from the done-condition: missing items, wrong blocks, and distance. Lower is better. */
-function shortfall(bot: Bot, doneWhen: DoneWhen | undefined): number {
+function shortfall(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn): number {
   if (!doneWhen) return Number.POSITIVE_INFINITY;
   const have = inventory(bot);
   let missing = 0;
+  if (doneWhen.given) for (const [item, n] of Object.entries(doneWhen.given.items)) missing += Math.max(0, n - (given?.(doneWhen.given.player, item) ?? 0));
   for (const b of doneWhen.blocks ?? []) if (blockMatches(bot, b.x, b.y, b.z, b.block) !== true) missing++;
   if (doneWhen.near) {
     const n = doneWhen.near;
@@ -102,6 +108,15 @@ function shortfall(bot: Bot, doneWhen: DoneWhen | undefined): number {
 const stepKey = (skill: string, args: unknown) => `${skill} ${JSON.stringify(args)}`;
 
 export async function runBrain(o: BrainOptions): Promise<BrainResult> {
+  const tally = new HandoverTally(o.bot);
+  try {
+    return await runBrainWith(o, tally.given);
+  } finally {
+    tally.dispose();
+  }
+}
+
+async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResult> {
   const callBudget = o.callBudget ?? 12;
   const stallLimit = o.stallLimit ?? 4;
   const knownItems = new Set(Object.keys((o.bot.registry as any).itemsByName));
@@ -126,11 +141,11 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
 
   for (;;) {
     if (o.signal.aborted) return finish('cancelled', 'The task was cancelled.');
-    if (isDone(o.bot, state.doneWhen)) return finish('done', `Done-condition met: ${JSON.stringify(state.doneWhen)}.`);
+    if (isDone(o.bot, state.doneWhen, given)) return finish('done', `Done-condition met: ${JSON.stringify(state.doneWhen)}.`);
     if (state.callsUsed >= callBudget) return finish('budget_exhausted', `Used all ${callBudget} decisions without finishing.`);
 
     // Progress is the shortfall against the done-condition; a decision that does not reduce it counts as a stall.
-    const now = shortfall(o.bot, state.doneWhen);
+    const now = shortfall(o.bot, state.doneWhen, given);
     if (now < best || lastPlanProgressed) {
       best = Math.min(best, now);
       stalled = 0;
@@ -168,7 +183,7 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
     // The LLM may tighten its done-condition once it learns more (e.g. how much a chest holds),
     // but a new condition that is already true is refused, so it cannot be used to declare success.
     if (d.done_when && state.doneWhen && JSON.stringify(d.done_when) !== JSON.stringify(state.doneWhen)) {
-      if (isDone(o.bot, d.done_when)) {
+      if (isDone(o.bot, d.done_when, given)) {
         state.journal.push(`Kept done_when ${JSON.stringify(state.doneWhen)}; the proposed ${JSON.stringify(d.done_when)} is already true.`);
       } else {
         state.journal.push(`done_when changed from ${JSON.stringify(state.doneWhen)} to ${JSON.stringify(d.done_when)}.`);
@@ -178,14 +193,14 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
     }
     if (d.done_when && !state.doneWhen) {
       // A condition that is already true before any step has run cannot tell whether the task was done.
-      if (result.steps.length === 0 && isDone(o.bot, d.done_when) && !d.answer && !d.give_up && !d.ask_owner) {
+      if (result.steps.length === 0 && isDone(o.bot, d.done_when, given) && !d.answer && !d.give_up && !d.ask_owner) {
         state.trigger = `Your done_when ${JSON.stringify(d.done_when)} is already true now, before anything was done, so it cannot show the task was finished. Describe the end state the owner asked for (for a block, include its state, e.g. "lever[powered=true]").`;
         state.journal.push(`Rejected done_when ${JSON.stringify(d.done_when)}: already true at the start.`);
         o.log(`[brain] rejected done_when that is already true: ${JSON.stringify(d.done_when)}`);
         continue;
       }
       state.doneWhen = d.done_when;
-      best = shortfall(o.bot, state.doneWhen);
+      best = shortfall(o.bot, state.doneWhen, given);
       o.log(`[brain] done_when ${JSON.stringify(d.done_when)}`);
     }
     if (d.answer) return finish('answered', d.answer);
@@ -195,7 +210,7 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
       state.trigger = 'You did not set done_when. Set it in this reply (or send "answer" if the task is only a question).';
       continue;
     }
-    if (isDone(o.bot, state.doneWhen)) continue;
+    if (isDone(o.bot, state.doneWhen, given)) continue;
     // after_plan is only for a timed duty: without a step that has `minutes`, the plan's end proves nothing.
     if (state.doneWhen.after_plan && !parsed.plan!.steps.some((s) => typeof (s.args as any)?.minutes === 'number')) {
       state.doneWhen = undefined;

@@ -1,0 +1,47 @@
+{
+  "id": "chat_question",
+  "seed": "20261109",
+  "runSeconds": 45,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "time set day",
+    "forceload add 80 80 150 135",
+    "tp dragonai 100.5 121 100.5",
+    "fill 90 120 90 135 120 130 stone",
+    "fill 90 121 90 135 128 130 air",
+    "fill 90 120 90 135 120 130 stone",
+    "fill 90 121 90 135 128 130 air",
+    "tp OwnerPlayer 108.5 121 100.5",
+    "tp dragonai 100.5 121 100.5",
+    "give dragonai oak_log 10"
+  ],
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      108.5,
+      121,
+      100.5
+    ],
+    "script": [
+      {
+        "wait": 2
+      },
+      {
+        "say": "how many oak logs do you have?"
+      },
+      {
+        "wait": 3
+      }
+    ]
+  },
+  "expect": {
+    "maxDeaths": 0
+  },
+  "expectBotSaid": [
+    "\\b10\\b"
+  ],
+  "expectTaskStatuses": [
+    "done"
+  ]
+}

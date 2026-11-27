@@ -278,3 +278,48 @@ export async function craftReliably(bot: Bot, recipe: any, times: number, table:
     }
   });
 }
+
+const heldCount = (bot: Bot, type: number) => bot.inventory.items().filter((i) => i.type === type).reduce((a, i) => a + i.count, 0);
+
+/**
+ * Drops exactly `count` of an item from the player inventory, one settled click at a time (the drop key: mode 4,
+ * button 1 for a whole stack, button 0 for one item). bot.toss sends a cursor pick-up, several outside clicks
+ * and a put-back all at once with one stateId, and the server applied only some of them (traced live on
+ * 2026-11-27, brain_20261127_060114_companion_chat_bring_logs_s7: 5 meant, 2 arrived). Checks the count after
+ * every click against a resync, so the number it returns is what really left the inventory. Call it under
+ * withInventoryLock.
+ */
+export async function dropReliably(bot: Bot, type: number, count: number, signal?: AbortSignal): Promise<number> {
+  trackPackets(bot);
+  if (bot.currentWindow) {
+    bot.closeWindow(bot.currentWindow);
+    await settleInventory(bot);
+  }
+  const inv: any = bot.inventory;
+  const start = heldCount(bot, type);
+  let stuck = 0;
+  while (start - heldCount(bot, type) < count && !signal?.aborted) {
+    const remaining = count - (start - heldCount(bot, type));
+    let slot = -1;
+    let best: any = null;
+    for (let i = inv.inventoryStart ?? 9; i < (inv.inventoryEnd ?? 45); i++) {
+      const it = inv.slots[i];
+      if (!it || it.type !== type) continue;
+      // Prefer a stack that fits in what is left, so a whole-stack drop can be used.
+      if (!best || (it.count <= remaining && (best.count > remaining || it.count > best.count))) {
+        best = it;
+        slot = i;
+      }
+    }
+    if (slot < 0) break;
+    const before = heldCount(bot, type);
+    await click(bot, slot, best.count <= remaining ? 1 : 0, 4);
+    if (heldCount(bot, type) >= before) {
+      // The click did not take, or the picture is stale: ask the server.
+      await resyncWindow(bot, inv);
+      if (heldCount(bot, type) >= before && ++stuck >= 3) break;
+    } else stuck = 0;
+  }
+  await resyncWindow(bot, inv);
+  return start - heldCount(bot, type);
+}

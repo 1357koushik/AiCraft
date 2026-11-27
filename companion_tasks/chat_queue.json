@@ -1,0 +1,81 @@
+{
+  "id": "chat_queue",
+  "seed": "20261109",
+  "runSeconds": 150,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "time set day",
+    "forceload add 80 80 150 135",
+    "tp dragonai 100.5 121 100.5",
+    "fill 90 120 90 135 120 130 stone",
+    "fill 90 121 90 135 128 130 air",
+    "fill 90 120 90 135 120 130 stone",
+    "fill 90 121 90 135 128 130 air",
+    "tp OwnerPlayer 108.5 121 100.5",
+    "tp dragonai 100.5 121 100.5",
+    "give dragonai oak_log 10",
+    "give dragonai cobblestone 4"
+  ],
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      108.5,
+      121,
+      100.5
+    ],
+    "script": [
+      {
+        "wait": 2
+      },
+      {
+        "say": "give me 2 oak logs"
+      },
+      {
+        "wait": 1
+      },
+      {
+        "say": "build a 2 block tall cobblestone pillar standing on the ground at 104 121 96"
+      },
+      {
+        "wait": 1
+      },
+      {
+        "say": "what's next?"
+      },
+      {
+        "wait": 5
+      }
+    ]
+  },
+  "expect": {
+    "ownerInventory": {
+      "oak_log": ">=2"
+    },
+    "blocks": [
+      {
+        "x": 104,
+        "y": 121,
+        "z": 96,
+        "block": "cobblestone"
+      },
+      {
+        "x": 104,
+        "y": 122,
+        "z": 96,
+        "block": "cobblestone"
+      }
+    ],
+    "maxDeaths": 0
+  },
+  "expectBotSaid": [
+    "^Queued",
+    "pillar",
+    "^Done: give me 2 oak logs",
+    "^Done: build"
+  ],
+  "expectTaskStatuses": [
+    "done",
+    "done"
+  ]
+}

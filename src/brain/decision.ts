@@ -20,10 +20,15 @@ export const DoneWhenSchema = z
     near: z.object({ x: Coord, y: Coord, z: Coord, range: z.number().positive().max(64).default(2) }).strict().optional(),
     /** A timed duty that changes nothing measurable ("guard me for a minute"): done when the plan has run to its end. Needs a step with `minutes`. */
     after_plan: z.literal(true).optional(),
+    /** Items a player must have picked up from the bot during this task, e.g. {"player": "Steve", "items": {"oak_log": 5}}. */
+    given: z
+      .object({ player: z.string().min(1).max(16), items: z.record(z.number().int().min(1).max(2304)).refine((r) => Object.keys(r).length > 0, 'items must name at least one item') })
+      .strict()
+      .optional(),
   })
   .strict()
-  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true, {
-    message: 'done_when needs at least one of inventory, blocks, near or after_plan',
+  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true || Boolean(d.given), {
+    message: 'done_when needs at least one of inventory, blocks, near, given or after_plan',
   });
 export type DoneWhen = z.infer<typeof DoneWhenSchema>;
 

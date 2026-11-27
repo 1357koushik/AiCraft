@@ -17,6 +17,8 @@
     "export:data": "tsx scripts/export_game_data.ts",
     "plan": "tsx scripts/run_plan.ts",
     "brain": "tsx scripts/run_brain.ts",
+    "companion": "tsx src/companion/main.ts",
+    "companion:test": "tsx scripts/run_companion.ts",
     "coverage": "tsx scripts/check_coverage.ts"
   },
   "keywords": [

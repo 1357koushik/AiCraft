@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Bot } from 'mineflayer';
-import { withInventoryLock } from '../actions/reliable_craft.js';
+import { withInventoryLock, dropReliably } from '../actions/reliable_craft.js';
 import { Precondition, SkillDefinition, SkillOutcome } from './contract.js';
 import { playerEntity } from './come_to.js';
 import { travel } from './go_to.js';
@@ -8,9 +8,9 @@ import { sleep } from './world.js';
 
 /**
  * give: hand items to a player by tossing them at their feet from close by. Walks to within 2 blocks, faces
- * them, tosses exactly `count` (one stack at a time, under the inventory lock), then checks that the items left
- * the bot's inventory and that no matching item is still lying on the ground nearby after the pickup delay. What
- * the player really received is the judge's business (server-side inventory), not the bot's.
+ * them, drops exactly `count` with settled one-at-a-time clicks (dropReliably, under the inventory lock), then
+ * waits for the server's collect packets to show the player picked them all up. What the player really holds
+ * is still the judge's business (server-side inventory).
  */
 
 const Args = z.object({
@@ -23,6 +23,20 @@ type GiveArgs = z.infer<typeof Args>;
 const CLOSE = 2.2;
 /** A dropped item cannot be picked up for 40 ticks (2 s). */
 const PICKUP_WAIT_MS = 2600;
+
+/** Closer than this, a drop aimed at the player's feet lands in the bot's own pickup reach. */
+const MIN_GIVE_DIST = 1.8;
+
+/** Walks backwards (facing `from`) for `ms`, then stops. Moves away from the player without turning round. */
+async function stepBack(bot: Bot, from: { x: number; y: number; z: number }, ms: number): Promise<void> {
+  await bot.lookAt(new (bot.entity.position.constructor as any)(from.x, bot.entity.position.y + 1.6, from.z), true);
+  bot.setControlState('back', true);
+  try {
+    await sleep(ms);
+  } finally {
+    bot.setControlState('back', false);
+  }
+}
 
 const held = (bot: Bot, item: string) => bot.inventory.items().filter((i) => i.name === item).reduce((a, i) => a + i.count, 0);
 
@@ -76,45 +90,63 @@ export const giveSkill: SkillDefinition<GiveArgs> = {
     evidence.push(`distance to ${args.player} when giving: ${dist.toFixed(1)}`);
     if (dist > CLOSE + 1.5) return { status: 'failed', cause: 'unreachable', message: `Only got within ${dist.toFixed(1)} blocks of ${args.player}.`, evidence };
 
-    const before = held(bot, args.item);
-    return withInventoryLock(async (): Promise<SkillOutcome> => {
-      let remaining = args.count;
-      let tossed = 0;
-      try {
-        while (remaining > 0 && !ctx.signal.aborted) {
-          const live = playerEntity(bot, args.player);
-          if (live) // Aim at their feet: a toss thrown level flies about 3 blocks and lands past them.
-          await bot.lookAt(live.position.offset(0, 0.2, 0), true);
-          const stack = bot.inventory.items().find((i) => i.name === args.item);
-          if (!stack) break;
-          const n = Math.min(stack.count, remaining);
-          await bot.toss(stack.type, null, n);
-          tossed += n;
-          remaining -= n;
-          evidence.push(`tossed ${n} ${args.item}`);
-          await sleep(250);
+    // What the server says the player picked up: collect packets whose collector is that player and whose
+    // collected entity is an item of this kind. This is the bot's own evidence; the judge still reads the
+    // player's inventory on the server.
+    const ownerId = target.id;
+    const myId = bot.entity.id;
+    let toOwner = 0;
+    let backToMe = 0;
+    const onCollect = (p: any) => {
+      const collected = bot.entities[p.collectedEntityId] as any;
+      if (collected?.name !== 'item' || collected.getDroppedItem?.()?.name !== args.item) return;
+      const n = Number(p.pickupItemCount ?? collected.getDroppedItem?.()?.count ?? 1);
+      if (p.collectorEntityId === ownerId) toOwner += n;
+      else if (p.collectorEntityId === myId) backToMe += n;
+    };
+    (bot as any)._client.on('collect', onCollect);
+    try {
+      const itemType = bot.registry.itemsByName[args.item].id;
+      const before = held(bot, args.item);
+      const left = await withInventoryLock(async () => {
+        let live = playerEntity(bot, args.player);
+        // Too close and the drop lands at the bot's own feet, where it picks it straight back up.
+        if (live && bot.entity.position.distanceTo(live.position) < MIN_GIVE_DIST) {
+          await stepBack(bot, live.position, 250);
+          live = playerEntity(bot, args.player);
         }
-      } catch (err) {
-        evidence.push(`error while tossing: ${(err as Error).message}`);
-      }
-      const after = held(bot, args.item);
-      const left = before - after;
-      evidence.push(`${args.item} ${before} -> ${after}`);
+        // Aim at their feet: a drop thrown level flies about 3 blocks and lands past them.
+        if (live) await bot.lookAt(live.position.offset(0, 0.2, 0), true);
+        const n = await dropReliably(bot, itemType, args.count, ctx.signal);
+        // Back off during the 2 s pickup delay so only the player is in reach of what was dropped.
+        const now = playerEntity(bot, args.player);
+        if (now) await stepBack(bot, now.position, 450);
+        return n;
+      });
+      evidence.push(`dropped ${left} ${args.item} (${args.item} ${before} -> ${held(bot, args.item)})`);
       if (ctx.signal.aborted) return { status: 'interrupted', cause: 'interrupted', message: `Cancelled while giving; ${left} ${args.item} left the inventory.`, evidence };
       if (left !== args.count) {
-        return { status: left > 0 ? 'partial' : 'failed', cause: 'server_rejected', message: `Meant to give ${args.count} ${args.item}, but ${left} left the inventory (tossed ${tossed}).`, evidence };
+        return { status: left > 0 ? 'partial' : 'failed', cause: 'server_rejected', message: `Meant to give ${args.count} ${args.item}, but ${left} left the inventory.`, evidence };
       }
 
-      // Wait out the pickup delay, then see whether the items are still lying around.
-      await sleep(PICKUP_WAIT_MS);
+      // A dropped item cannot be picked up for 2 s; then wait until the player has collected all of it.
+      const deadline = Date.now() + PICKUP_WAIT_MS + 3000;
+      while (toOwner < args.count && Date.now() < deadline && !ctx.signal.aborted) await sleep(200);
       const at = playerEntity(bot, args.player)?.position ?? bot.entity.position;
       const unique = [...new Set([...groundItems(bot, args.item, at, 6), ...groundItems(bot, args.item, bot.entity.position, 6)])];
       const onGround = unique.reduce((a, e) => a + (e.getDroppedItem?.()?.count ?? 1), 0);
-      evidence.push(`${onGround} ${args.item} still on the ground nearby after ${Math.round(PICKUP_WAIT_MS / 1000)} s`);
-      if (onGround > 0) {
-        return { status: 'partial', cause: 'blocked', message: `Tossed ${args.count} ${args.item}, but ${onGround} are still lying on the ground; ${args.player} has not picked them up.`, fix: `ask ${args.player} to stand closer, or come_to them and give again`, evidence };
-      }
-      return { status: 'done', message: `Gave ${args.count} ${args.item} to ${args.player}.`, evidence };
-    });
+      evidence.push(`${args.player} picked up ${toOwner}, the bot took back ${backToMe}, ${onGround} still on the ground nearby`);
+      if (toOwner >= args.count) return { status: 'done', message: `Gave ${args.count} ${args.item} to ${args.player} (they picked up ${toOwner}).`, evidence };
+      const where = [backToMe ? `the bot picked ${backToMe} back up` : '', onGround ? `${onGround} are lying on the ground` : ''].filter(Boolean).join(', ') || 'the rest were not seen';
+      return {
+        status: toOwner > 0 ? 'partial' : 'failed',
+        cause: 'blocked',
+        message: `Dropped ${args.count} ${args.item}, but ${args.player} picked up only ${toOwner}; ${where}.`,
+        fix: `give the missing ${args.count - toOwner} again from closer, or ask ${args.player} to pick them up`,
+        evidence,
+      };
+    } finally {
+      (bot as any)._client.off('collect', onCollect);
+    }
   },
 };

@@ -18,6 +18,27 @@ export interface ChatClient {
   complete(system: string, user: string): Promise<ChatResult>;
 }
 
+/**
+ * Retries a call on failures that are usually brief: network errors, timeouts, rate limits (429) and server
+ * errors (5xx). Client errors such as a bad key (4xx) fail at once. Backoff: 1 s, 3 s, 9 s.
+ */
+async function withRetry(call: () => Promise<ChatResult>, attempts = 4): Promise<ChatResult> {
+  let last: Error | null = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await call();
+    } catch (err) {
+      last = err as Error;
+      const msg = last.message ?? '';
+      const status = Number(msg.match(/(\d{3}):/)?.[1] ?? 0);
+      const transient = status === 429 || status >= 500 || status === 0 || /fetch failed|timeout|aborted|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket/i.test(msg);
+      if (!transient || i === attempts - 1) break;
+      await new Promise((r) => setTimeout(r, 1000 * 3 ** i));
+    }
+  }
+  throw last ?? new Error('LLM call failed');
+}
+
 export function createChatClient(overrides: { model?: string } = {}): ChatClient {
   const config = loadConfig();
   const llm: any = config.llm;
@@ -32,7 +53,7 @@ export function createChatClient(overrides: { model?: string } = {}): ChatClient
     const key = process.env.ANTHROPIC_API_KEY ?? apiKey;
     return {
       model,
-      async complete(system, user) {
+      complete: (system, user) => withRetry(async () => {
         const started = Date.now();
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -44,14 +65,14 @@ export function createChatClient(overrides: { model?: string } = {}): ChatClient
         const j: any = await res.json();
         const text = (j.content ?? []).map((c: any) => c.text ?? '').join('');
         return { text, inputTokens: j.usage?.input_tokens ?? 0, outputTokens: j.usage?.output_tokens ?? 0, latencyMs: Date.now() - started };
-      },
+      }),
     };
   }
 
   const baseUrl = String(llm.baseUrl ?? 'http://localhost:1234/v1').replace(/\/$/, '');
   return {
     model,
-    async complete(system, user) {
+    complete: (system, user) => withRetry(async () => {
       const started = Date.now();
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (apiKey) headers.authorization = `Bearer ${apiKey}`;
@@ -73,6 +94,6 @@ export function createChatClient(overrides: { model?: string } = {}): ChatClient
       const j: any = await res.json();
       const text = j.choices?.[0]?.message?.content ?? '';
       return { text, inputTokens: j.usage?.prompt_tokens ?? 0, outputTokens: j.usage?.completion_tokens ?? 0, latencyMs: Date.now() - started };
-    },
+    }),
   };
 }
