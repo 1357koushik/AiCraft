@@ -1,0 +1,34 @@
+{
+  "id": "cook_food",
+  "text": "make me 2 cooked beef",
+  "seed": "20261109",
+  "timeoutSec": 420,
+  "callBudget": 8,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "time set day",
+    "forceload add 90 90 120 110",
+    "tp dragonai 100.5 121 100.5",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "fill 99 121 95 111 123 95 stone",
+    "fill 99 121 105 111 123 105 stone",
+    "fill 99 121 95 99 123 105 stone",
+    "fill 111 121 95 111 123 105 stone",
+    "tp dragonai 101.5 121 100.5",
+    "give dragonai iron_sword 1",
+    "give dragonai furnace 1",
+    "give dragonai coal 3",
+    "summon cow 106.5 121 97.5 {PersistenceRequired:1b}",
+    "summon cow 108.5 121 99.5 {PersistenceRequired:1b}",
+    "summon cow 106.5 121 103.5 {PersistenceRequired:1b}",
+    "summon cow 109.5 121 101.5 {PersistenceRequired:1b}",
+    "summon cow 104.5 121 102.5 {PersistenceRequired:1b}"
+  ],
+  "expect": {
+    "inventory": { "cooked_beef": ">=2" },
+    "maxDeaths": 0
+  }
+}

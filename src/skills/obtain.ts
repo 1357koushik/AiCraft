@@ -8,6 +8,7 @@ import { mineSkill } from './mine.js';
 import { chopTreeSkill } from './chop_tree.js';
 import { useStationSkill } from './use_station.js';
 import { exploreForSkill } from './explore_for.js';
+import { animalsDropping, huntSkill } from './hunt.js';
 
 /**
  * obtain: get `count` more of any item, by whatever route the game data offers: chop, craft, smelt or mine,
@@ -136,6 +137,11 @@ async function acquire(job: Job, item: string, count: number, alternatives?: str
       } else {
         const drop = ways.find((w) => w.kind === 'drop');
         const loot = ways.find((w) => w.kind === 'loot');
+        // Raw meat, leather, feathers, wool: passive farm animals drop them, and the hunt skill kills those.
+        if (drop && drop.kind === 'drop' && animalsDropping(target1).length) {
+          await viaHunting(job, target1, need);
+          continue;
+        }
         const where = drop && drop.kind === 'drop' ? `it drops from ${drop.entities.slice(0, 4).join(', ')}` : loot && loot.kind === 'loot' ? `it is found in ${loot.tables.slice(0, 3).join(', ')}` : 'there is no known way to get it';
         throw new ObtainStop(`${target1} cannot be crafted, smelted or mined: ${where}.`, 'not_found_nearby', drop && drop.kind === 'drop' ? `hunt ${drop.entities[0]}` : undefined);
       }
@@ -194,6 +200,12 @@ async function viaSmelting(job: Job, item: string, need: number, way: { station:
   if (r.status === 'failed') throw new ObtainStop(`Smelting ${input} failed: ${r.message}`, r.cause ?? 'unknown', r.fix);
 }
 
+async function viaHunting(job: Job, item: string, need: number): Promise<void> {
+  const r = await step(job, `${need} ${item}`, huntSkill, { item, count: need });
+  // A partial hunt (some got, then none left or none to spare) is retried by the caller's loop, which then stops on the failure.
+  if (r.status === 'failed') throw new ObtainStop(`Hunting for ${item} failed: ${r.message}`, r.cause ?? 'unknown', r.fix);
+}
+
 async function viaMining(job: Job, item: string, need: number, way: { blocks: string[] }): Promise<void> {
   const bot = job.ctx.bot;
   // Prefer a block kind that is actually nearby; ores come in stone and deepslate forms.
@@ -219,7 +231,7 @@ async function viaMining(job: Job, item: string, need: number, way: { blocks: st
 export const obtainSkill: SkillDefinition<ObtainArgs> = {
   name: 'obtain',
   summary:
-    'obtain {item, count}: get `count` more of any item by chopping, crafting, smelting or mining, fetching the ingredients, tools, fuel and stations along the way. Stops and reports when the item only comes from mobs, chests or trading, or a step fails.',
+    'obtain {item, count}: get `count` more of any item by chopping, crafting, smelting or mining, fetching the ingredients, tools, fuel and stations along the way. Raw meat, leather, feathers and wool come from hunting passive animals, so cooked food works end to end. Stops and reports when the item only comes from other mobs, chests or trading, or a step fails.',
   args: Args,
   check(ctx, a) {
     if (!(ctx.bot.registry as any).itemsByName[a.item]) return { ok: false, cause: 'invalid_args', message: `There is no item called "${a.item}".` };

@@ -1,0 +1,30 @@
+{
+  "id": "sleep_bed",
+  "seed": "20261109",
+  "timeoutSec": 180,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle true",
+    "gamerule playersSleepingPercentage 1",
+    "forceload add 90 90 120 110",
+    "tp dragonai 100.5 121 100.5",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "tp dragonai 100.5 121 100.5",
+    "time set 13000",
+    "give dragonai red_bed 1"
+  ],
+  "plan": {
+    "notes": "Night, the bot holds a bed and no bed is placed: it must put it down on the flat spot, get in and sleep until morning.",
+    "steps": [
+      { "skill": "sleep", "args": {} }
+    ]
+  },
+  "expect": {
+    "stats": { "custom:sleep_in_bed": ">=1" },
+    "daytime": "<2000",
+    "maxDeaths": 0
+  }
+}

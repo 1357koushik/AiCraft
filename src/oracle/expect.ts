@@ -1,5 +1,9 @@
 import { shortId } from './files.js';
 
+/** Slots of the `equipment` compound the server stores for a player (1.21.5+). */
+export const EQUIPMENT_SLOTS = ['head', 'chest', 'legs', 'feet', 'offhand', 'mainhand'] as const;
+export type EquipmentSlotName = (typeof EQUIPMENT_SLOTS)[number];
+
 /**
  * What a task must achieve, stated in terms the server can confirm.
  * Every field is optional; all given fields must hold.
@@ -36,6 +40,15 @@ export interface TaskExpectations {
    * hit of 3 hp adds 30), so the raw value is divided by 10 here. Needs a task owner.
    */
   ownerDamageTakenMax?: number;
+  /**
+   * What the server says the bot wears, read from `data get entity <bot> equipment`: slot -> item id, with slots
+   * head, chest, legs, feet, offhand (and mainhand). Use "none" for a slot that must be empty.
+   */
+  equipment?: Partial<Record<EquipmentSlotName, string>>;
+  /** The world's time of day at the end (`time query daytime`, 0..23999; 0 is sunrise), compared with e.g. "<2000". */
+  daytime?: string;
+  /** The bot's food bar at the end (`foodLevel`, 0..20), compared with e.g. ">=14". */
+  food?: string;
 }
 
 /** One poll's distance between the bot and the owner (null when either was offline or had no position). */
@@ -67,6 +80,12 @@ export interface Evidence {
   ownerDistances?: OwnerDistanceSample[];
   /** Damage the owner took during the measured window, in hit points (the stat's raw value / 10). */
   ownerDamageTaken?: number;
+  /** What the bot wears, slot -> short item id; empty slots are absent. */
+  equipment?: Record<string, string>;
+  /** The world's `time query daytime` (0..23999), read over RCON. */
+  daytime?: number;
+  /** The bot's `foodLevel` (0..20), read over RCON. */
+  food?: number;
 }
 
 export interface CheckResult {
@@ -112,6 +131,12 @@ export function validateExpectations(expect: TaskExpectations): void {
     parseComparison(value);
   }
   for (const value of Object.values(expect.ownerInventory ?? {})) parseComparison(value);
+  for (const [slot, item] of Object.entries(expect.equipment ?? {})) {
+    if (!(EQUIPMENT_SLOTS as readonly string[]).includes(slot)) throw new Error(`Invalid equipment slot "${slot}" (use ${EQUIPMENT_SLOTS.join(', ')})`);
+    if (typeof item !== 'string' || !item) throw new Error(`Equipment ${slot} needs an item id or "none"`);
+  }
+  if (expect.daytime !== undefined) parseComparison(expect.daytime);
+  if (expect.food !== undefined) parseComparison(expect.food);
   if (expect.nearOwner) {
     const n = expect.nearOwner;
     if (typeof n.range !== 'number' || !(n.range > 0)) throw new Error(`nearOwner.range must be a positive number, got ${JSON.stringify(n.range)}`);
@@ -151,7 +176,10 @@ export function hasExpectations(expect: TaskExpectations | undefined): boolean {
       expect.near ||
       Object.keys(expect.ownerInventory ?? {}).length ||
       expect.nearOwner ||
+      Object.keys(expect.equipment ?? {}).length ||
       expect.ownerDamageTakenMax !== undefined ||
+      expect.daytime !== undefined ||
+      expect.food !== undefined ||
       hasWorldExpectations(expect)
   );
 }
@@ -259,6 +287,20 @@ export function evaluateExpectations(expect: TaskExpectations, evidence: Evidenc
       ok: known && evidence.ownerDamageTaken! <= expect.ownerDamageTakenMax,
       source: 'owner damage_taken stat / 10',
     });
+  }
+  if (expect.daytime !== undefined) {
+    const known = evidence.daytime !== undefined;
+    results.push({ check: 'world daytime (ticks)', expected: expect.daytime, actual: known ? String(evidence.daytime) : 'unknown', ok: known && compare(evidence.daytime!, parseComparison(expect.daytime)), source: 'RCON time query daytime' });
+  }
+  if (expect.food !== undefined) {
+    const known = evidence.food !== undefined;
+    results.push({ check: 'bot food level', expected: expect.food, actual: known ? String(evidence.food) : 'unknown', ok: known && compare(evidence.food!, parseComparison(expect.food)), source: 'RCON data get entity foodLevel' });
+  }
+  for (const [slot, want] of Object.entries(expect.equipment ?? {})) {
+    const wanted = shortId(want as string);
+    const known = evidence.equipment !== undefined;
+    const actual = known ? evidence.equipment![slot] ?? 'none' : 'unknown';
+    results.push({ check: `equipment ${slot}`, expected: wanted, actual, ok: known && actual === wanted, source: 'RCON data get entity equipment' });
   }
   if (expect.maxDeaths !== undefined) {
     results.push({ check: 'deaths', expected: `<=${expect.maxDeaths}`, actual: String(evidence.deaths), ok: evidence.deaths <= expect.maxDeaths, source: 'bot_oracle death events' });

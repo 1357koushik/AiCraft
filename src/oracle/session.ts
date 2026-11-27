@@ -20,6 +20,11 @@ export interface Verdict {
   checks: CheckResult[];
   /** Commands that changed the game during the measured window. */
   assists: string[];
+  /**
+   * Commands the task file declared as things the world does to the bot ("events": a kill, a mob, nightfall),
+   * run by the harness during the measured window. They are the test, not help, so they are listed apart.
+   */
+  worldEvents?: string[];
   deaths: number;
   deathMessages: string[];
   /** Places where two server-side sources disagreed. */
@@ -60,6 +65,9 @@ export class OracleSession {
   private deaths = 0;
   private deathMessages: string[] = [];
   private assists: string[] = [];
+  private worldEvents: string[] = [];
+  /** Declared event commands sent over RCON whose log line has not been seen yet. */
+  private pendingEvents: string[] = [];
   private discrepancies: string[] = [];
   private pollCount = 0;
   private lastWorld: WorldEvidence | undefined;
@@ -129,8 +137,17 @@ export class OracleSession {
       this.deathMessages.push(`${entry.time} ${entry.player} ${entry.text}`);
     }
     if (isAssistingCommand(entry) && entry.kind === 'command') {
-      this.assists.push(`${entry.time} [${entry.source}] ${entry.feedback}`);
+      // Each RCON command prints one feedback line; the harness is the only RCON client, so the next one after a
+      // declared event is that event.
+      const declared = entry.source === 'Rcon' ? this.pendingEvents.shift() : undefined;
+      if (declared) this.worldEvents.push(`${entry.time} ${declared} -> ${entry.feedback}`);
+      else this.assists.push(`${entry.time} [${entry.source}] ${entry.feedback}`);
     }
+  }
+
+  /** Call right before the harness sends a declared world event (JudgedSpec.events), so it is not counted as help. */
+  declareEvent(command: string): void {
+    this.pendingEvents.push(command);
   }
 
   /** Reads the block, region and container checks. Regions are skipped unless `withRegions` (they are slow). */
@@ -163,7 +180,19 @@ export class OracleSession {
     for (const [key, objective] of this.statObjectives) statDeltas[key] = await readScore(rcon, bot, objective);
     // Regions cost one query per block, so they are re-read every fifth poll; the rest every poll.
     const world = await this.worldEvidence(this.pollCount++ % 5 === 0);
-    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world, pos: snapshot.pos, ...this.ownerEvidence() };
+    const daytime = await this.readDaytime();
+    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world, pos: snapshot.pos, equipment: snapshot.equipment, ...(snapshot.food !== undefined ? { food: snapshot.food } : {}), ...(daytime !== undefined ? { daytime } : {}), ...this.ownerEvidence() };
+  }
+
+  /** The world's `time query daytime` (0..23999) when the run expects something of it; undefined otherwise or if unreadable. */
+  private async readDaytime(): Promise<number | undefined> {
+    if (this.options.expect.daytime === undefined) return undefined;
+    try {
+      const m = (await this.options.rcon.command('time query daytime')).match(/is (\d+)/);
+      return m ? parseInt(m[1], 10) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private ownerEvidence(): Pick<Evidence, 'ownerItems' | 'ownerDistances' | 'ownerDamageTaken'> {
@@ -246,6 +275,7 @@ export class OracleSession {
     } catch (err) {
       this.discrepancies.push(`World check failed: ${(err as Error).message}`);
     }
+    const daytimeNow = await this.readDaytime();
     let ownerDamageTaken: number | undefined;
     if (this.ownerDamageObjective) {
       // The stats file is the final word (it is what the server persists); the live scoreboard must agree with it.
@@ -256,12 +286,15 @@ export class OracleSession {
     const evidence: Evidence = {
       world,
       pos: snapshot?.pos,
+      equipment: snapshot?.equipment,
+      ...(snapshot?.food !== undefined ? { food: snapshot.food } : {}),
       items: snapshot?.items ?? {},
       advancements: fileAdvancements,
       statDeltas: fileStats,
       dimension: snapshot?.dimension,
       deaths: this.deaths,
       ...this.ownerEvidence(),
+      ...(daytimeNow !== undefined ? { daytime: daytimeNow } : {}),
       ...(ownerDamageTaken !== undefined ? { ownerDamageTaken } : {}),
     };
     const checks = evaluateExpectations(expect, evidence, { stats: 'world stats file', advancements: 'world advancements file' });
@@ -292,6 +325,7 @@ export class OracleSession {
       reason,
       checks,
       assists: this.assists,
+      worldEvents: this.worldEvents,
       deaths: this.deaths,
       deathMessages: this.deathMessages,
       discrepancies: this.discrepancies,
@@ -324,6 +358,7 @@ export function formatVerdictMarkdown(taskText: string, runId: string, verdict: 
     '',
     `Commands that changed the game during the run: ${verdict.assists.length ? '' : 'none'}`,
     ...verdict.assists.map((a) => `- ${a}`),
+    ...(verdict.worldEvents?.length ? ['', 'World events the task declared (the test, not help):', ...verdict.worldEvents.map((e) => `- ${e}`)] : []),
   ];
   if (verdict.discrepancies.length) {
     lines.push('', '## Discrepancies between server sources', ...verdict.discrepancies.map((d) => `- ${d}`));

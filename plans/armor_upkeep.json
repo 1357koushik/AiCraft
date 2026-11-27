@@ -1,0 +1,47 @@
+{
+  "id": "armor_upkeep",
+  "seed": "20261109",
+  "timeoutSec": 150,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "forceload add 90 90 120 110",
+    "tp dragonai 100.5 121 100.5",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "fill 99 121 95 111 122 95 stone",
+    "fill 99 121 105 111 122 105 stone",
+    "fill 99 121 95 99 122 105 stone",
+    "fill 111 121 95 111 122 105 stone",
+    "tp dragonai 100.5 121 100.5",
+    "time set day",
+    "item replace entity dragonai armor.feet with leather_boots",
+    "item replace entity dragonai armor.head with golden_helmet",
+    "give dragonai iron_helmet 1",
+    "give dragonai iron_chestplate 1",
+    "give dragonai iron_leggings 1",
+    "give dragonai iron_boots 1",
+    "give dragonai leather_leggings 1",
+    "give dragonai shield 1",
+    "give dragonai carved_pumpkin 1"
+  ],
+  "plan": {
+    "notes": "Ordinary walking in a room while the armor upkeep puts on the best piece of each kind and the shield; the leather boots and golden helmet worn first must be replaced by iron, and the carved pumpkin must stay in the bag.",
+    "steps": [
+      { "skill": "go_to", "args": { "x": 108, "y": 121, "z": 103 } },
+      { "skill": "go_to", "args": { "x": 101, "y": 121, "z": 97 } },
+      { "skill": "go_to", "args": { "x": 108, "y": 121, "z": 97 } },
+      { "skill": "go_to", "args": { "x": 101, "y": 121, "z": 103 } },
+      { "skill": "go_to", "args": { "x": 108, "y": 121, "z": 100 } },
+      { "skill": "go_to", "args": { "x": 101, "y": 121, "z": 100 } },
+      { "skill": "go_to", "args": { "x": 108, "y": 121, "z": 103 } },
+      { "skill": "go_to", "args": { "x": 101, "y": 121, "z": 97 } }
+    ]
+  },
+  "expect": {
+    "equipment": { "head": "iron_helmet", "chest": "iron_chestplate", "legs": "iron_leggings", "feet": "iron_boots", "offhand": "shield" },
+    "inventory": { "carved_pumpkin": ">=1" },
+    "maxDeaths": 0
+  }
+}

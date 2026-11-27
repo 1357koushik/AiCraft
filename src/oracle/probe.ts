@@ -8,6 +8,8 @@ export interface PlayerSnapshot {
   online: boolean;
   /** Item counts across inventory and equipment (armor, offhand), keyed by short id ("stone_pickaxe"). */
   items: Record<string, number>;
+  /** What is worn or held, from the `equipment` compound: slot (head, chest, legs, feet, offhand, mainhand) -> short item id. */
+  equipment?: Record<string, string>;
   pos?: [number, number, number];
   dimension?: string;
   health?: number;
@@ -29,6 +31,17 @@ export function countItems(inventory: SnbtValue | null, equipment: SnbtValue | n
     for (const entry of Object.values(equipment)) addItem(items, entry);
   }
   return items;
+}
+
+/** Slot -> short item id from the `equipment` compound (1.21.5+); empty slots are left out. */
+export function parseEquipment(equipment: SnbtValue | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (equipment && typeof equipment === 'object' && !Array.isArray(equipment)) {
+    for (const [slot, entry] of Object.entries(equipment)) {
+      if (entry && typeof entry === 'object' && !Array.isArray(entry) && typeof (entry as any).id === 'string') out[slot] = shortId((entry as any).id);
+    }
+  }
+  return out;
 }
 
 async function dataGet(rcon: RconClient, name: string, path: string): Promise<SnbtValue | null> {
@@ -56,6 +69,7 @@ export async function snapshotPlayer(rcon: RconClient, name: string): Promise<Pl
       name,
       online: true,
       items: countItems(inventory, equipment),
+      equipment: parseEquipment(equipment),
       pos: Array.isArray(pos) ? (pos.map(Number) as [number, number, number]) : undefined,
       dimension: typeof dimension === 'string' ? dimension : undefined,
       health: typeof health === 'number' ? health : undefined,

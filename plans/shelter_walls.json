@@ -1,0 +1,46 @@
+{
+  "id": "shelter_walls",
+  "seed": "20261109",
+  "timeoutSec": 900,
+  "setup": [
+    "gamerule doMobSpawning true",
+    "gamerule doDaylightCycle true",
+    "forceload add 60 60 140 140",
+    "tp dragonai 100.5 121 100.5",
+    "fill 70 117 70 130 120 130 stone",
+    "fill 70 121 70 130 128 130 air",
+    "fill 70 121 70 130 124 70 dirt",
+    "fill 70 121 130 130 124 130 dirt",
+    "fill 70 121 70 70 124 130 dirt",
+    "fill 130 121 70 130 124 130 dirt",
+    "fill 70 117 70 130 120 130 stone",
+    "fill 70 121 70 130 128 130 air",
+    "fill 70 121 70 130 124 70 dirt",
+    "fill 70 121 130 130 124 130 dirt",
+    "fill 70 121 70 70 124 130 dirt",
+    "fill 130 121 70 130 124 130 dirt",
+    "tp dragonai 100.5 121 100.5",
+    "time set 18000",
+    "give dragonai dirt 16",
+    "give dragonai wooden_shovel 1",
+    "give dragonai wooden_sword 1",
+    "summon zombie 124.5 121 100.5 {PersistenceRequired:1b}",
+    "summon zombie 100.5 121 124.5 {PersistenceRequired:1b}"
+  ],
+  "plan": {
+    "notes": "Night with zombies 24 blocks away, stone ground and only a shovel: digging down is impossible, so the bot must wall itself in with 10 held blocks (walls, scaffold and roof), wait for morning and open a side again.",
+    "steps": [
+      {
+        "skill": "shelter",
+        "args": {}
+      }
+    ]
+  },
+  "expect": {
+    "stats": {
+      "custom:damage_taken": "<=40"
+    },
+    "daytime": "<2000",
+    "maxDeaths": 0
+  }
+}

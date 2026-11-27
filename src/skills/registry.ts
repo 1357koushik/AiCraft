@@ -17,14 +17,17 @@ import { comeToSkill } from './come_to.js';
 import { followSkill } from './follow.js';
 import { giveSkill } from './give.js';
 import { guardSkill } from './guard.js';
+import { huntSkill } from './hunt.js';
 import { exploreForSkill } from './explore_for.js';
 import { rememberPlaceSkill } from './remember_place.js';
+import { sleepSkill } from './sleep.js';
+import { shelterSkill } from './shelter.js';
 
 /**
  * The skill catalogue: every skill the step-plan runner (and later the LLM) can call.
  * A skill is added here only once it passes its live test.
  */
-export const ALL_SKILLS: SkillDefinition[] = [craftSkill, goToSkill, placeSkill, equipSkill, eatSkill, storeSkill, takeSkill, chopTreeSkill, mineSkill, collectDropsSkill, useStationSkill, useBlockSkill, inspectContainerSkill, comeToSkill, followSkill, giveSkill, guardSkill, exploreForSkill, rememberPlaceSkill, obtainSkill];
+export const ALL_SKILLS: SkillDefinition[] = [craftSkill, goToSkill, placeSkill, equipSkill, eatSkill, storeSkill, takeSkill, chopTreeSkill, mineSkill, collectDropsSkill, useStationSkill, useBlockSkill, inspectContainerSkill, comeToSkill, followSkill, giveSkill, guardSkill, huntSkill, exploreForSkill, rememberPlaceSkill, obtainSkill, sleepSkill, shelterSkill];
 
 export function buildRegistry(skills: SkillDefinition[] = ALL_SKILLS): SkillRegistry {
   const registry: SkillRegistry = new Map();

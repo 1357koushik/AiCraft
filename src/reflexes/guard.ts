@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3';
 import { body } from './body.js';
 import { withInventoryLock } from '../actions/reliable_craft.js';
 import { ProgressWatchdog } from '../skills/contract.js';
+import { installArmorUpkeep } from './armor.js';
 
 /**
  * Reflexes: the per-tick layer that keeps the bot alive while a skill runs (ROADMAP.md section 3, the reflex
@@ -338,7 +339,9 @@ export function installReflexGuard(bot: Bot, onEvent: (e: ReflexEvent) => void =
   };
 
   const timer = setInterval(tick, 250);
+  const stopArmor = installArmorUpkeep(bot, onEvent);
   return () => {
+    stopArmor();
     ProgressWatchdog.isPaused = () => false;
     clearInterval(timer);
     bot.off('entityHurt', onHurt);
