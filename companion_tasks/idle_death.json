@@ -1,0 +1,71 @@
+{
+  "id": "idle_death",
+  "seed": "20261109",
+  "runSeconds": 75,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "gamerule doWeatherCycle false",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "time set day",
+    "setworldspawn 96 121 100",
+    "gamerule spawnRadius 0",
+    "tp OwnerPlayer 100.5 121 104.5",
+    "tp dragonai 140.5 121 100.5",
+    "clear dragonai",
+    "give dragonai cobblestone 3",
+    "give dragonai iron_ingot 5",
+    "give dragonai bread 4"
+  ],
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      100.5,
+      121,
+      104.5
+    ],
+    "script": [
+      {
+        "wait": 2
+      },
+      {
+        "say": "status"
+      },
+      {
+        "wait": 60
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": 8,
+      "command": "kill dragonai"
+    }
+  ],
+  "expect": {
+    "inventory": {
+      "iron_ingot": ">=5",
+      "cobblestone": ">=3",
+      "bread": ">=4"
+    },
+    "stats": {
+      "custom:deaths": ">=1"
+    },
+    "near": {
+      "x": 140.5,
+      "y": 121,
+      "z": 100.5,
+      "range": 8
+    },
+    "maxDeaths": 1
+  },
+  "expectBotSaid": [
+    "^I died",
+    "Recovered everything"
+  ],
+  "callBudget": 2
+}

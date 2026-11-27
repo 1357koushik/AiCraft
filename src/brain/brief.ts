@@ -36,13 +36,14 @@ Reply with ONE JSON object and nothing else:
  "steps": [{"skill": "<name>", "args": {...}}, ...],     // 1 to 12 steps, run in order
  "done_when": {...}                                       // on your first reply (you may tighten it later): how code can tell the task is finished
 }
-done_when uses any of: "inventory": {"<item>": ">=N"} (counts held), "blocks": [{"x":..,"y":..,"z":..,"block":"cobblestone"}] (use "air" for a cleared spot; add states when they matter, e.g. "lever[powered=true]", "oak_door[open=true]"), "near": {"x":..,"y":..,"z":..,"range":2} (where the bot must end up), "given": {"player": "<name>", "items": {"<item>": N}} (for handing items to a player: done when that player has picked up N from you during this task; use it for "give me", "bring me"), "after_plan": true (only for a timed duty such as "guard me for a minute" or "follow me for 2 minutes", where nothing measurable changes: done when your plan has run to its end; the plan must contain a step with "minutes").
+done_when uses any of: "inventory": {"<item>": ">=N"} (counts held), "blocks": [{"x":..,"y":..,"z":..,"block":"cobblestone"}] (use "air" for a cleared spot; add states when they matter, e.g. "lever[powered=true]", "oak_door[open=true]"), "near": {"x":..,"y":..,"z":..,"range":2} (where the bot must end up), "given": {"player": "<name>", "items": {"<item>": N}} (for handing items to a player: done when that player has picked up N from you during this task; use it for "give me", "bring me"), "food_at_least": N (the food bar, 0 to 20, must reach N: for "eat until you're full" use 14 or more), "time_of_day": "<2000" (the clock, 0 to 23999 where 0 is sunrise and night is 12542 to 23459: "<2000" means the night is over, for "get through the night"), "after_plan": true (only for a timed duty such as "guard me for a minute" or "follow me for 2 minutes", where nothing measurable changes: done when your plan has run to its end; the plan must contain a step with "minutes").
 done_when must describe the result the owner asked for, not a step on the way to it, and must not already be true before you act. If you cannot know an amount yet (what a chest holds), look first with inspect_container, or set what you know and send a stricter done_when later.
 For a done_when count of zero use "==0".
 Example of one step: {"skill": "craft", "args": {"item": "stick", "count": 4}}. Arguments always go inside "args".
 or {"notes": "...", "answer": "<your reply>"} when the task is only a question (use the inventory, state and recipes shown below; never guess game facts),
 or {"notes": "...", "ask_owner": "<one short question>"} only when the request is ambiguous and you need the owner to choose,
 or {"notes": "...", "give_up": "<why it cannot be done>"} when it is impossible in survival (no commands, no creative), even if you could explain it.
+or {"notes": "...", "steps": [...], "standing": {"every_minutes": N} or {"when": "night"} or {}} for a STANDING ORDER that should keep happening until the owner cancels it ("always guard me", "keep the furnace fuelled", "every night go home", "whenever you're free, follow me"). No done_when is needed: code keeps your steps and runs them again by itself between other tasks (every N minutes, once each night or day, or, with {}, whenever nothing else is running, which is only for a step that runs until stopped such as guard or follow with no "minutes"). Make the steps one complete round of the duty. A one-off request, even a long one ("guard me until I say stop"), is not a standing order.
 
 Rules:
 - Plan several steps ahead when the next steps are clear; you are asked again when the plan finishes, when a step fails or partly succeeds, or when something serious happens. Each step's preconditions are checked when it is reached, so a plan that goes stale stops safely.
@@ -55,6 +56,7 @@ Rules:
 - Only use place with coordinates you have seen to be free (air) in NEARBY or from a step result; never guess.
 - Items do not appear by themselves: gather or craft each ingredient first. Read the MISSING section; it is worked out from the game's own recipes.
 - When something you need is not in NEARBY, check KNOWN PLACES; if it is not there either, use explore_for to search for it. Use remember_place to name a spot ("base") and go_to {place} to return.
+- "Me", "my" and "I" in the task mean the player the task is from (shown as OWNER): pass that name to every skill that takes a player (guard, follow, come_to, give). Leaving it out makes guard protect the spot where you stand instead of the player.
 - Only code decides whether the task is done, from done_when.
 
 Skills:

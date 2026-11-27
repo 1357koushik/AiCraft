@@ -10,6 +10,7 @@ import { installPacketTrace } from '../utils/packet_trace.js';
 import { applyProtocolFixes } from '../connection/protocol_fixes.js';
 import { logDir } from '../utils/paths.js';
 import { installReflexGuard } from '../reflexes/guard.js';
+import { watchDeaths, stopWatchingDeaths } from '../survival/deaths.js';
 import { PlacesMemory, setActivePlaces, startPlacesScan } from '../memory/places.js';
 import { OwnerSim, OwnerSpec, DEFAULT_OWNER_NAME, validateOwnerSpec } from './owner_sim.js';
 
@@ -30,6 +31,31 @@ export interface JudgedSpec {
   properties?: Record<string, string>;
   /** A scripted second player who plays the human owner. Joins after the bot, before measuring starts. */
   owner?: OwnerSpec;
+  /**
+   * Things the world does to the bot while it is measured, run by the harness over RCON at `at` seconds after
+   * measuring starts: a mob attack, a death (`kill dragonai`), nightfall. The test's environment, never help for the
+   * bot; each is logged in the run.
+   */
+  events?: WorldEvent[];
+}
+
+export interface WorldEvent {
+  at: number;
+  command: string;
+}
+
+/** Throws on a malformed events list, so a bad task file fails before the server starts. */
+export function validateEvents(events: unknown): WorldEvent[] {
+  if (events === undefined) return [];
+  if (!Array.isArray(events)) throw new Error('"events" must be a list of {at, command}');
+  return events.map((e, i) => {
+    const at = (e as any)?.at;
+    const command = (e as any)?.command;
+    if (typeof at !== 'number' || !Number.isFinite(at) || at < 0 || at > 3600) throw new Error(`events[${i}].at must be seconds between 0 and 3600`);
+    if (typeof command !== 'string' || !command.trim() || command.startsWith('/')) throw new Error(`events[${i}].command must be a server command without the leading slash`);
+    if (Object.keys(e as object).length !== 2) throw new Error(`events[${i}] must have exactly "at" and "command"`);
+    return { at, command: command.trim() };
+  });
 }
 
 export interface BodyContext {
@@ -132,6 +158,10 @@ export async function runJudged(
     // Reflexes run for the whole measured part: fight, flee, eat, escape lava and drowning, then let the skill resume.
     const reflexBot = bot;
     stopReflexes = installReflexGuard(reflexBot, (e) => runLog(`[reflex] ${e.reflex}: ${e.detail}`));
+    // The death log starts now, so a death during setup or the run is known with what the bot carried.
+    const deathWatch = watchDeaths(reflexBot);
+    deathWatch.on('death', (d) => runLog(`[death] at ${d.pos.x} ${d.pos.y} ${d.pos.z} holding ${Object.keys(d.items).length} kinds of item`));
+    deathWatch.on('respawn', (d) => runLog(`[death] respawned at ${d.respawnAt ? `${d.respawnAt.x} ${d.respawnAt.y} ${d.respawnAt.z}` : '?'}${d.cause ? `; cause: ${d.cause}` : ''}`));
 
     for (const cmd of spec.setup ?? []) {
       const out = await running.rcon.command(cmd);
@@ -162,6 +192,15 @@ export async function runJudged(
 
     const abort = new AbortController();
     const deadline = setTimeout(() => abort.abort(new Error('time limit')), spec.timeoutSec * 1000);
+    const eventTimers = validateEvents(spec.events).map((ev) =>
+      setTimeout(() => {
+        session.declareEvent(ev.command);
+        running!.rcon
+          .command(ev.command)
+          .then((r) => runLog(`[event] t=${ev.at}s ${ev.command} -> ${r.trim()}`))
+          .catch((err) => runLog(`[event] t=${ev.at}s ${ev.command} failed: ${(err as Error).message}`));
+      }, ev.at * 1000)
+    );
     let polling = true;
     const poller = (async () => {
       while (polling) {
@@ -184,6 +223,7 @@ export async function runJudged(
       await ownerRun;
     } finally {
       clearTimeout(deadline);
+      for (const t of eventTimers) clearTimeout(t);
       polling = false;
       await poller;
     }
@@ -197,6 +237,7 @@ export async function runJudged(
     verdict = errorVerdict(message);
   } finally {
     stopReflexes?.();
+    if (bot) stopWatchingDeaths(bot);
     stopPlaces?.();
     setActivePlaces(null);
     owner?.quit();

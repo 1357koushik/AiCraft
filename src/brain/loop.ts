@@ -1,10 +1,12 @@
 import type { Bot } from 'mineflayer';
 import { HandoverTally, GivenFn } from './handovers.js';
 import { Vec3 } from 'vec3';
-import { runPlan, SkillRegistry, StepRecord } from '../skills/contract.js';
+import { runPlan, runSkill, SkillRegistry, StepPlan, StepRecord } from '../skills/contract.js';
 import { parseComparison, compare } from '../oracle/expect.js';
 import { ChatClient } from './llm_client.js';
-import { parseDecision, DoneWhen } from './decision.js';
+import { parseDecision, planRunsUntilStopped, DoneWhen } from './decision.js';
+import { watchDeaths, whyNotRecoverable, describeItems, DeathRecord } from '../survival/deaths.js';
+import { recoverItemsSkill } from '../skills/recover_items.js';
 import { systemPrompt, userBrief, RequirementsSource, BriefState } from './brief.js';
 
 /**
@@ -29,10 +31,12 @@ export interface BrainOptions {
   stallLimit?: number;
   /** Writes every prompt and reply here, for replay and debugging. */
   record?: (entry: Record<string, unknown>) => void;
+  /** Why the LLM is asked, for the first decision (default "This is a new task."). */
+  trigger?: string;
 }
 
 export interface BrainResult {
-  outcome: 'done' | 'answered' | 'gave_up' | 'asked_owner' | 'budget_exhausted' | 'stalled' | 'cancelled' | 'llm_error';
+  outcome: 'done' | 'answered' | 'gave_up' | 'asked_owner' | 'budget_exhausted' | 'stalled' | 'cancelled' | 'llm_error' | 'standing';
   message: string;
   calls: number;
   inputTokens: number;
@@ -41,6 +45,16 @@ export interface BrainResult {
   steps: StepRecord[];
   doneWhen?: DoneWhen;
   notes: string;
+  /** For outcome "standing": the plan the companion keeps and runs again, and when. */
+  standing?: StandingPlan;
+}
+
+export interface StandingPlan {
+  plan: StepPlan;
+  everyMinutes?: number;
+  when?: 'night' | 'day';
+  /** The plan never ends by itself (guard or follow with no minutes). */
+  untilStopped: boolean;
 }
 
 function inventory(bot: Bot): Record<string, number> {
@@ -79,6 +93,8 @@ export function isDone(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn
     parts.push(Object.entries(doneWhen.inventory).every(([item, expr]) => compare(have[item.replace(/^minecraft:/, '')] ?? 0, parseComparison(expr))));
   }
   if (doneWhen.blocks?.length) parts.push(doneWhen.blocks.every((b) => blockMatches(bot, b.x, b.y, b.z, b.block) === true));
+  if (doneWhen.food_at_least !== undefined) parts.push((bot.food ?? 0) >= doneWhen.food_at_least);
+  if (doneWhen.time_of_day !== undefined) parts.push(compare(Number(bot.time?.timeOfDay ?? 0), parseComparison(doneWhen.time_of_day)));
   if (doneWhen.near) {
     const n = doneWhen.near;
     parts.push(bot.entity.position.distanceTo(new Vec3(n.x + 0.5, n.y, n.z + 0.5)) <= n.range + 0.5);
@@ -93,6 +109,8 @@ function shortfall(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn): n
   let missing = 0;
   if (doneWhen.given) for (const [item, n] of Object.entries(doneWhen.given.items)) missing += Math.max(0, n - (given?.(doneWhen.given.player, item) ?? 0));
   for (const b of doneWhen.blocks ?? []) if (blockMatches(bot, b.x, b.y, b.z, b.block) !== true) missing++;
+  if (doneWhen.food_at_least !== undefined) missing += Math.max(0, doneWhen.food_at_least - (bot.food ?? 0));
+  if (doneWhen.time_of_day !== undefined && !compare(Number(bot.time?.timeOfDay ?? 0), parseComparison(doneWhen.time_of_day))) missing++;
   if (doneWhen.near) {
     const n = doneWhen.near;
     missing += Math.max(0, Math.floor(bot.entity.position.distanceTo(new Vec3(n.x + 0.5, n.y, n.z + 0.5)) - n.range));
@@ -123,7 +141,7 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
   const system = systemPrompt(o.registry);
   const record = o.record ?? (() => undefined);
 
-  const state: BriefState = { task: o.task, owner: o.owner, trigger: 'This is a new task.', notes: '', lastSteps: [], journal: [], callsUsed: 0, callBudget };
+  const state: BriefState = { task: o.task, owner: o.owner, trigger: o.trigger ?? 'This is a new task.', notes: '', lastSteps: [], journal: [], callsUsed: 0, callBudget };
   const result: BrainResult = { outcome: 'done', message: '', calls: 0, inputTokens: 0, outputTokens: 0, llmMs: 0, steps: [], notes: '' };
   // Failed steps by key, with the inventory at the time, so an identical retry with nothing changed is refused.
   const failed = new Map<string, { cause: string; inv: string }>();
@@ -133,6 +151,35 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
   // Intermediate work (sticks, a table) does not shrink the goal's shortfall but is still progress.
   let lastPlanProgressed = false;
 
+  const deaths = watchDeaths(o.bot);
+  const startedAt = Date.now();
+  /**
+   * After a death: wait for the respawn, go back for the drops by code (no LLM call needed to decide that), and
+   * tell the LLM what happened so it can carry on with the task from the new situation.
+   */
+  const afterDeath = async (rec: DeathRecord): Promise<{ trigger: string; records: StepRecord[] }> => {
+    o.log(`[brain] the bot died at ${rec.pos.x} ${rec.pos.y} ${rec.pos.z}${rec.cause ? ` (${rec.cause})` : ''}; waiting for the respawn`);
+    record({ kind: 'death', pos: rec.pos, cause: rec.cause, items: rec.items });
+    const respawned = await deaths.waitForRespawn(20000, o.signal);
+    const head = `You died during the plan${rec.cause ? ` ("${rec.cause}")` : ''} at ${rec.pos.x} ${rec.pos.y} ${rec.pos.z}, holding ${describeItems(rec.items)}.`;
+    if (!respawned) return { trigger: `${head} The respawn was not seen.`, records: [] };
+    const where = rec.respawnAt ? ` You respawned at ${rec.respawnAt.x} ${rec.respawnAt.y} ${rec.respawnAt.z}.` : '';
+    const why = whyNotRecoverable(rec, o.bot);
+    state.journal.push(`Died at ${rec.pos.x} ${rec.pos.y} ${rec.pos.z}${rec.cause ? ` (${rec.cause})` : ''}.`);
+    if (why || o.signal.aborted) return { trigger: `${head}${where} The items were not fetched: ${why ?? 'the task was cancelled'}. Decide how to carry on with the task.`, records: [] };
+    o.log('[brain] going back for the dropped items');
+    const r = await runSkill(recoverItemsSkill, { bot: o.bot, signal: o.signal, log: o.log }, {});
+    o.log(`[brain] recover_items -> ${r.status}: ${r.message}`);
+    state.journal.push(`recover_items -> ${r.status}: ${r.message}`);
+    const records: StepRecord[] = [{ index: 0, step: { skill: 'recover_items', args: {} }, result: r }];
+    return { trigger: `${head}${where} Code went back for the drops: ${r.message} Decide how to carry on with the task.`, records };
+  };
+  /** A death between plans (while the LLM was thinking) is handled before the next decision. */
+  const pendingDeath = (): DeathRecord | null => {
+    const rec = deaths.last;
+    return rec && !rec.recoveryTried && rec.at >= startedAt ? rec : null;
+  };
+
   const finish = (outcome: BrainResult['outcome'], message: string): BrainResult => {
     Object.assign(result, { outcome, message, doneWhen: state.doneWhen, notes: state.notes });
     o.log(`[brain] ${outcome}: ${message} (${result.calls} LLM calls, ${result.inputTokens}+${result.outputTokens} tokens, ${Math.round(result.llmMs / 1000)} s thinking)`);
@@ -141,6 +188,14 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
 
   for (;;) {
     if (o.signal.aborted) return finish('cancelled', 'The task was cancelled.');
+    const missed = pendingDeath();
+    if (missed) {
+      missed.recoveryTried = true;
+      const after = await afterDeath(missed);
+      result.steps.push(...after.records);
+      state.trigger = after.trigger;
+      continue;
+    }
     if (isDone(o.bot, state.doneWhen, given)) return finish('done', `Done-condition met: ${JSON.stringify(state.doneWhen)}.`);
     if (state.callsUsed >= callBudget) return finish('budget_exhausted', `Used all ${callBudget} decisions without finishing.`);
 
@@ -180,6 +235,12 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
     if (!parsed || !parsed.ok) return finish('llm_error', `No valid decision: ${parsed && !parsed.ok ? parsed.error : 'none'}.`);
     const d = parsed.decision;
     state.notes = d.notes;
+    // A standing order is not run here: the companion keeps the plan and runs it between other tasks.
+    if (d.standing && parsed.plan) {
+      result.standing = { plan: parsed.plan, everyMinutes: d.standing.every_minutes, when: d.standing.when, untilStopped: planRunsUntilStopped(parsed.plan, o.registry) };
+      const how = d.standing.every_minutes ? `every ${d.standing.every_minutes} min` : d.standing.when ? `each ${d.standing.when}` : 'until told to stop, between other tasks';
+      return finish('standing', `Standing order (${how}): ${parsed.plan.steps.map((s) => s.skill).join(' -> ')}`);
+    }
     // The LLM may tighten its done-condition once it learns more (e.g. how much a chest holds),
     // but a new condition that is already true is refused, so it cannot be used to declare success.
     if (d.done_when && state.doneWhen && JSON.stringify(d.done_when) !== JSON.stringify(state.doneWhen)) {
@@ -232,8 +293,26 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
       continue;
     }
 
+    // Died while the LLM was thinking: the plan was made for a bot that no longer exists. Recover, then ask again.
+    if (pendingDeath()) continue;
     o.log(`[brain] plan: ${parsed.plan!.steps.map((s) => stepKey(s.skill, s.args)).join(' -> ')}`);
-    const run = await runPlan(parsed.plan!, o.registry, { bot: o.bot, signal: o.signal, log: o.log });
+    // A death stops the plan: what it was doing no longer fits the inventory or the place.
+    const planAbort = new AbortController();
+    const onOuterAbort = () => planAbort.abort(o.signal.reason);
+    o.signal.addEventListener('abort', onOuterAbort, { once: true });
+    let diedDuring: DeathRecord | null = null;
+    const onDeath = (rec: DeathRecord) => {
+      diedDuring = rec;
+      planAbort.abort(new Error('the bot died'));
+    };
+    deaths.on('death', onDeath);
+    let run;
+    try {
+      run = await runPlan(parsed.plan!, o.registry, { bot: o.bot, signal: planAbort.signal, log: o.log });
+    } finally {
+      deaths.off('death', onDeath);
+      o.signal.removeEventListener('abort', onOuterAbort);
+    }
     lastPlanProgressed = run.steps.some(
       (r) =>
         r.result.status !== 'failed' &&
@@ -248,6 +327,17 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
         failed.set(stepKey(r.step.skill, r.step.args), { cause: r.result.cause ?? 'unknown', inv: JSON.stringify(inventory(o.bot)) });
         state.journal.push(`${stepKey(r.step.skill, r.step.args)} -> ${r.result.status} (${r.result.cause}): ${r.result.message}`);
       }
+    }
+    const died = diedDuring as DeathRecord | null;
+    if (died && !o.signal.aborted) {
+      died.recoveryTried = true;
+      const after = await afterDeath(died);
+      if (after.records.length) {
+        result.steps.push(...after.records);
+        lastPlanProgressed = true;
+      }
+      state.trigger = after.trigger;
+      continue;
     }
     if (run.outcome === 'completed' && state.doneWhen?.after_plan) return finish('done', 'The timed duty ran to its end.');
     state.trigger =

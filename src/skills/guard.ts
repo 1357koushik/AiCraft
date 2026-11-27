@@ -112,6 +112,7 @@ export const guardSkill: SkillDefinition<GuardArgs> = {
   summary:
     'guard {player?, place?: {x,y,z}, radius?=12, minutes?}: stay near the player (or the place; with neither, where you stand) and kill hostile mobs that come within `radius` of it, nearest to them first; never touches players, pets or peaceful mobs. With no `minutes` it guards until the owner says stop. Use for "protect me", "guard me", "kill the zombies near my house".',
   args: Args,
+  untilStopped: (raw) => raw.minutes === undefined,
   check: (ctx, args) => check(ctx, args),
   async run(ctx, args): Promise<SkillOutcome> {
     const bot: any = ctx.bot;

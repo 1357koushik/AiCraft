@@ -89,6 +89,8 @@ export interface SkillDefinition<Args = any> {
   /** Cheap, side-effect free. Called before run and again when a plan reaches this step. */
   check(ctx: SkillContext, args: Args): Precondition | Promise<Precondition>;
   run(ctx: SkillContext, args: Args): Promise<SkillOutcome>;
+  /** True when, with these (raw) args, the skill runs until it is cancelled (guard or follow with no `minutes`). */
+  untilStopped?: (rawArgs: Record<string, unknown>) => boolean;
 }
 
 // ---------------------------------------------------------------------------------------------

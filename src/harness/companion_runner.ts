@@ -9,7 +9,7 @@ import type { RequirementsSource } from '../brain/brief.js';
 import { Companion, TaskItem } from '../companion/companion.js';
 import type { OwnerSpec } from './owner_sim.js';
 import { DEFAULT_OWNER_NAME } from './owner_sim.js';
-import { runJudged } from './judged_run.js';
+import { runJudged, validateEvents, WorldEvent } from './judged_run.js';
 
 /**
  * A judged run where the owner gives tasks the way a player would: by saying them in chat. The scripted owner
@@ -32,6 +32,8 @@ export interface CompanionSpec {
   callBudget?: number;
   checkpoint?: string;
   properties?: Record<string, string>;
+  /** Timed things the world does during the run (see JudgedSpec.events). */
+  events?: WorldEvent[];
 }
 
 export function loadCompanionSpec(filePath: string): CompanionSpec {
@@ -49,6 +51,7 @@ export function loadCompanionSpec(filePath: string): CompanionSpec {
     callBudget: raw.callBudget,
     checkpoint: raw.checkpoint,
     properties: raw.properties,
+    events: validateEvents(raw.events),
   };
   validateExpectations(spec.expect);
   for (const pattern of spec.expectBotSaid ?? []) {
@@ -86,6 +89,7 @@ export async function runCompanionSpec(
       owner: spec.owner,
       checkpoint: spec.checkpoint,
       properties: spec.properties,
+      events: spec.events,
     },
     async ({ bot, signal, log, runDir }) => {
       const decisions = fs.createWriteStream(path.join(runDir, 'decisions.ndjson'));

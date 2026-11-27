@@ -1,0 +1,60 @@
+{
+  "id": "death_recovery",
+  "seed": "20261109",
+  "text": "Build a pillar of 3 cobblestone at 145 121 104 (the bottom block at y 121, then 122 and 123).",
+  "timeoutSec": 240,
+  "callBudget": 8,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "gamerule doWeatherCycle false",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "time set day",
+    "setworldspawn 96 121 100",
+    "gamerule spawnRadius 0",
+    "tp dragonai 140.5 121 100.5",
+    "clear dragonai",
+    "give dragonai cobblestone 3",
+    "give dragonai iron_ingot 5",
+    "give dragonai bread 4"
+  ],
+  "events": [
+    {
+      "at": 3,
+      "command": "kill dragonai"
+    }
+  ],
+  "expect": {
+    "blocks": [
+      {
+        "x": 145,
+        "y": 121,
+        "z": 104,
+        "block": "cobblestone"
+      },
+      {
+        "x": 145,
+        "y": 122,
+        "z": 104,
+        "block": "cobblestone"
+      },
+      {
+        "x": 145,
+        "y": 123,
+        "z": 104,
+        "block": "cobblestone"
+      }
+    ],
+    "inventory": {
+      "iron_ingot": ">=5"
+    },
+    "stats": {
+      "custom:deaths": ">=1"
+    },
+    "maxDeaths": 1
+  }
+}

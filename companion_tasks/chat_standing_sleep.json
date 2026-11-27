@@ -1,0 +1,60 @@
+{
+  "id": "chat_standing_sleep",
+  "seed": "20261109",
+  "runSeconds": 120,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doWeatherCycle false",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "time set 11000",
+    "gamerule playersSleepingPercentage 1",
+    "tp OwnerPlayer 96.5 121 104.5",
+    "tp dragonai 100.5 121 100.5",
+    "clear dragonai",
+    "give dragonai red_bed 1",
+    "give dragonai bread 3"
+  ],
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      96.5,
+      121,
+      104.5
+    ],
+    "script": [
+      {
+        "wait": 2
+      },
+      {
+        "say": "every night, sleep in your bed"
+      },
+      {
+        "wait": 100
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": 30,
+      "command": "time set 13000"
+    }
+  ],
+  "expect": {
+    "stats": {
+      "custom:sleep_in_bed": ">=1"
+    },
+    "daytime": "<6000",
+    "maxDeaths": 0
+  },
+  "expectBotSaid": [
+    "^Standing order: every night"
+  ],
+  "expectTaskStatuses": [
+    "done"
+  ],
+  "callBudget": 4
+}

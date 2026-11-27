@@ -7,7 +7,7 @@ import { buildRegistry } from '../skills/registry.js';
 import { runBrain, BrainResult } from '../brain/loop.js';
 import { createChatClient, ChatClient } from '../brain/llm_client.js';
 import type { RequirementsSource } from '../brain/brief.js';
-import { runJudged } from './judged_run.js';
+import { runJudged, validateEvents, WorldEvent } from './judged_run.js';
 import { OwnerSpec, DEFAULT_OWNER_NAME } from './owner_sim.js';
 
 /**
@@ -32,6 +32,8 @@ export interface BrainTaskSpec {
   properties?: Record<string, string>;
   /** A scripted second player who plays the owner; the brief then says who the task comes from. */
   owner?: OwnerSpec;
+  /** Timed things the world does during the run (see JudgedSpec.events). */
+  events?: WorldEvent[];
 }
 
 export function loadBrainTask(filePath: string): BrainTaskSpec {
@@ -50,6 +52,7 @@ export function loadBrainTask(filePath: string): BrainTaskSpec {
     checkpoint: raw.checkpoint,
     properties: raw.properties,
     owner: raw.owner,
+    events: validateEvents(raw.events),
   };
   validateExpectations(spec.expect);
   return spec;
@@ -70,7 +73,7 @@ export async function runBrainTask(
   const llm = opts.llm ?? createChatClient();
   let brain: BrainResult | null = null;
   const out = await runJudged(
-    { kind: 'brain', id: spec.id, seed: spec.seed, timeoutSec: spec.timeoutSec, setup: spec.setup, expect: spec.expect, checkpoint: spec.checkpoint, properties: spec.properties, owner: spec.owner },
+    { kind: 'brain', id: spec.id, seed: spec.seed, timeoutSec: spec.timeoutSec, setup: spec.setup, expect: spec.expect, checkpoint: spec.checkpoint, properties: spec.properties, owner: spec.owner, events: spec.events },
     async ({ bot, signal, log, runDir }) => {
       const decisions = fs.createWriteStream(path.join(runDir, 'decisions.ndjson'));
       try {

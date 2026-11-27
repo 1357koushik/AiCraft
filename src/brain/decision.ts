@@ -25,10 +25,14 @@ export const DoneWhenSchema = z
       .object({ player: z.string().min(1).max(16), items: z.record(z.number().int().min(1).max(2304)).refine((r) => Object.keys(r).length > 0, 'items must name at least one item') })
       .strict()
       .optional(),
+    /** The food bar (0-20) must be at least this, e.g. 14 for "eat until you are fed". */
+    food_at_least: z.number().int().min(1).max(20).optional(),
+    /** The time of day (0-23999, 0 is sunrise, night is 12542-23459) compared, e.g. "<2000" for "the night is over". */
+    time_of_day: z.string().regex(/^(>=|<=|==|=|>|<)?\s*\d+$/).optional(),
   })
   .strict()
-  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true || Boolean(d.given), {
-    message: 'done_when needs at least one of inventory, blocks, near, given or after_plan',
+  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true || Boolean(d.given) || d.food_at_least !== undefined || d.time_of_day !== undefined, {
+    message: 'done_when needs at least one of inventory, blocks, near, given, food_at_least, time_of_day or after_plan',
   });
 export type DoneWhen = z.infer<typeof DoneWhenSchema>;
 
@@ -41,6 +45,17 @@ export const DecisionSchema = z
     /** The reply to a question that needs no action ("how do I make a piston?", "how many logs do you have?"). */
     answer: z.string().max(1200).optional(),
     give_up: z.string().max(300).optional(),
+    /**
+     * A standing order ("always guard me", "keep the furnace fuelled", "every night, go home"): code keeps the plan and
+     * runs it again between other tasks until the owner cancels it, with no further LLM call unless it fails.
+     * every_minutes: run again that long after each run ends. when: run once each night (or each morning).
+     * A plan whose step runs until stopped (guard or follow with no minutes) needs neither: it is resumed after
+     * every other task.
+     */
+    standing: z
+      .object({ every_minutes: z.number().min(0.5).max(240).optional(), when: z.enum(['night', 'day']).optional() })
+      .strict()
+      .optional(),
   })
   .strict();
 export type Decision = z.infer<typeof DecisionSchema>;
@@ -111,8 +126,21 @@ export function parseDecision(text: string, registry: SkillRegistry, knownItems:
   for (const item of Object.keys(d.done_when?.inventory ?? {})) {
     if (!knownItems.has(item.replace(/^minecraft:/, ''))) return { ok: false, error: `done_when names an unknown item "${item}"` };
   }
+  if (d.standing && !d.steps.length) return { ok: false, error: 'a standing order needs the "steps" to repeat' };
   if (!d.steps.length) return { ok: true, decision: d, plan: null };
   const v = validatePlan({ steps: d.steps, notes: d.notes }, registry);
   if (!v.ok) return { ok: false, error: v.errors.join('; ') };
+  if (d.standing) {
+    const { every_minutes, when } = d.standing;
+    if (every_minutes !== undefined && when !== undefined) return { ok: false, error: 'standing takes "every_minutes" or "when", not both' };
+    if (every_minutes === undefined && when === undefined && !planRunsUntilStopped(v.plan, registry)) {
+      return { ok: false, error: 'standing needs "every_minutes" or "when", unless a step runs until stopped (guard or follow with no "minutes")' };
+    }
+  }
   return { ok: true, decision: d, plan: v.plan };
+}
+
+/** True when some step of the plan runs until it is cancelled, so the plan never ends by itself. */
+export function planRunsUntilStopped(plan: StepPlan, registry: SkillRegistry): boolean {
+  return plan.steps.some((s) => registry.get(s.skill)?.untilStopped?.(s.args as Record<string, unknown>) === true);
 }

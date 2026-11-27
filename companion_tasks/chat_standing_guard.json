@@ -1,0 +1,82 @@
+{
+  "id": "chat_standing_guard",
+  "seed": "20261109",
+  "runSeconds": 125,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "gamerule doWeatherCycle false",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "time set midnight",
+    "tp OwnerPlayer 97.5 121 115.5",
+    "tp dragonai 96.5 121 112.5",
+    "give dragonai iron_sword 1",
+    "give dragonai iron_helmet 1",
+    "give dragonai iron_chestplate 1",
+    "give dragonai iron_leggings 1",
+    "give dragonai iron_boots 1",
+    "give dragonai bread 5"
+  ],
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      97.5,
+      121,
+      115.5
+    ],
+    "script": [
+      {
+        "wait": 2
+      },
+      {
+        "say": "from now on, always guard me"
+      },
+      {
+        "wait": 25
+      },
+      {
+        "say": "give me 2 bread"
+      },
+      {
+        "wait": 90
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": 60,
+      "command": "summon zombie 110.5 121 115.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 61,
+      "command": "summon zombie 110.5 121 117.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 62,
+      "command": "summon zombie 110.5 121 113.5 {PersistenceRequired:1b}"
+    }
+  ],
+  "expect": {
+    "ownerInventory": {
+      "bread": ">=2"
+    },
+    "stats": {
+      "killed:zombie": ">=2"
+    },
+    "ownerDamageTakenMax": 4,
+    "maxDeaths": 0
+  },
+  "expectBotSaid": [
+    "^Standing order: from now on, always guard me",
+    "setting aside: from now on, always guard me"
+  ],
+  "expectTaskStatuses": [
+    "done",
+    "done"
+  ],
+  "callBudget": 6
+}

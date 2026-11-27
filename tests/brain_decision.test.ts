@@ -82,3 +82,20 @@ describe('lenient shapes the models send', () => {
     if (r.ok) expect(r.decision.done_when?.inventory).toEqual({ cobblestone: '==0', oak_log: '>=4' });
   });
 });
+
+describe('done_when on vitals and the clock', () => {
+  it('accepts food_at_least and time_of_day, and isDone reads them from the bot', async () => {
+    const { isDone } = await import('../src/brain/loop.js');
+    const r = parseDecision('{"steps":[{"skill":"craft","args":{"item":"x"}}],"done_when":{"time_of_day":"<2000"}}', registry, items);
+    expect(r.ok).toBe(true);
+    expect(parseDecision('{"steps":[{"skill":"craft","args":{"item":"x"}}],"done_when":{"time_of_day":"soon"}}', registry, items).ok).toBe(false);
+    expect(parseDecision('{"steps":[{"skill":"craft","args":{"item":"x"}}],"done_when":{"food_at_least":21}}', registry, items).ok).toBe(false);
+    const bot: any = { time: { timeOfDay: 13000 }, food: 5 };
+    expect(isDone(bot, { time_of_day: '<2000' } as any)).toBe(false);
+    bot.time.timeOfDay = 80;
+    expect(isDone(bot, { time_of_day: '<2000' } as any)).toBe(true);
+    expect(isDone(bot, { food_at_least: 14 } as any)).toBe(false);
+    bot.food = 18;
+    expect(isDone(bot, { food_at_least: 14 } as any)).toBe(true);
+  });
+});

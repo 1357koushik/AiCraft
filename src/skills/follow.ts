@@ -31,6 +31,7 @@ const fmtSec = (ms: number) => `${Math.round(ms / 1000)} s`;
 export const followSkill: SkillDefinition<FollowArgs> = {
   name: 'follow',
   summary: 'follow {player, minutes?, distance?=3}: keep within `distance` blocks of the named player for `minutes`; with no `minutes` it follows until the owner says stop. Use for "follow me".',
+  untilStopped: (raw) => raw.minutes === undefined,
   args: Args,
   check(ctx, args) {
     if (!(ctx.bot as any).pathfinder) return { ok: false, cause: 'unknown', message: 'The pathfinder is not available.' };

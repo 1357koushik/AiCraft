@@ -4,7 +4,7 @@ import type { Verdict } from '../oracle/session.js';
 import { TaskExpectations, validateExpectations } from '../oracle/expect.js';
 import { runPlan, PlanRunResult, validatePlan, SkillRegistry } from '../skills/contract.js';
 import { buildRegistry } from '../skills/registry.js';
-import { runJudged } from './judged_run.js';
+import { runJudged, validateEvents, WorldEvent } from './judged_run.js';
 
 /**
  * Runs a hand-written step plan with a bare bot (no agent loop, no LLM) on a fresh judged world.
@@ -22,6 +22,8 @@ export interface PlanSpec {
   expect: TaskExpectations;
   checkpoint?: string;
   properties?: Record<string, string>;
+  /** Timed things the world does during the run (see JudgedSpec.events). */
+  events?: WorldEvent[];
 }
 
 export interface PlanRunOutput {
@@ -42,6 +44,7 @@ export function loadPlanFile(filePath: string): PlanSpec {
     expect: raw.expect ?? {},
     checkpoint: raw.checkpoint,
     properties: raw.properties,
+    events: validateEvents(raw.events),
   };
   validateExpectations(spec.expect);
   return spec;
@@ -54,7 +57,7 @@ export async function runPlanSpec(spec: PlanSpec, opts: { registry?: SkillRegist
 
   let planResult: PlanRunResult | null = null;
   const out = await runJudged(
-    { kind: 'plan', id: spec.id, seed: spec.seed, timeoutSec: spec.timeoutSec, setup: spec.setup, expect: spec.expect, checkpoint: spec.checkpoint, properties: spec.properties },
+    { kind: 'plan', id: spec.id, seed: spec.seed, timeoutSec: spec.timeoutSec, setup: spec.setup, expect: spec.expect, checkpoint: spec.checkpoint, properties: spec.properties, events: spec.events },
     async ({ bot, signal, log, runDir }) => {
       planResult = await runPlan(spec.plan, registry, { bot, signal, log });
       fs.writeFileSync(path.join(runDir, 'steps.json'), JSON.stringify(planResult, null, 2));
