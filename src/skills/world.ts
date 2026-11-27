@@ -139,12 +139,19 @@ export interface GoResult {
  * Runs the pathfinder to a goal. `remaining` returns a number that shrinks as the bot gets closer; the walk
  * is abandoned only when that number stops improving for `stuckMs`, not after a fixed time.
  */
-export async function goTo(ctx: SkillContext, goal: any, remaining: () => number, stuckMs = 8000, canDig = true, thinkMs?: number): Promise<GoResult> {
+export async function goTo(ctx: SkillContext, goal: any, remaining: () => number, stuckMs = 8000, canDig = true, thinkMs?: number, swim = false): Promise<GoResult> {
   const bot: any = ctx.bot;
   if (!bot.pathfinder) return { ok: false, reason: 'error', detail: 'pathfinder plugin not loaded' };
   if (ctx.signal.aborted) return { ok: false, reason: 'aborted' };
   const movements = updatePathfinderMovements(ctx.bot);
   if (movements) movements.canDig = canDig;
+  if (movements && swim) {
+    // Wading across shallow water is allowed (explore_for); it stays expensive in the path cost, lava stays avoided.
+    for (const n of ['water', 'flowing_water']) {
+      const id = (ctx.bot.registry as any).blocksByName?.[n]?.id;
+      if (id !== undefined) movements.blocksToAvoid?.delete(id);
+    }
+  }
   // Bounded planning time per target so an unreachable one is given up quickly instead of burning the watchdog.
   bot.pathfinder.thinkTimeout = thinkMs ?? 5000;
   const watchdog = new ProgressWatchdog(stuckMs, remaining());

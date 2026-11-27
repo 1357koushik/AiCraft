@@ -1,0 +1,12 @@
+{
+  "id": "find_sand",
+  "text": "get me 4 sand",
+  "seed": "20261109",
+  "timeoutSec": 600,
+  "callBudget": 8,
+  "setup": ["time set day"],
+  "expect": {
+    "inventory": { "sand": ">=4" },
+    "maxDeaths": 0
+  }
+}

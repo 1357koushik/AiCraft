@@ -1,0 +1,29 @@
+{
+  "id": "remember_and_return",
+  "seed": "20261109",
+  "timeoutSec": 300,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "time set day",
+    "forceload add 80 80 320 120",
+    "tp dragonai 100.5 121 100.5",
+    "fill 90 120 90 310 120 110 stone",
+    "fill 90 121 90 310 128 110 air",
+    "fill 90 120 90 310 120 110 stone",
+    "fill 90 121 90 310 128 110 air",
+    "tp dragonai 100.5 121 100.5"
+  ],
+  "plan": {
+    "notes": "Name the start as base, walk 180 blocks away, then come back by name only.",
+    "steps": [
+      { "skill": "remember_place", "args": { "name": "base" } },
+      { "skill": "go_to", "args": { "x": 280.5, "y": 121, "z": 100.5, "range": 2 } },
+      { "skill": "go_to", "args": { "place": "the base", "range": 2 } }
+    ]
+  },
+  "expect": {
+    "near": { "x": 100.5, "y": 121, "z": 100.5, "range": 4 },
+    "maxDeaths": 0
+  }
+}

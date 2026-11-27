@@ -1,0 +1,23 @@
+{
+  "id": "explore_far_block",
+  "seed": "20261109",
+  "timeoutSec": 900,
+  "setup": [
+    "time set day",
+    "gamerule doMobSpawning false",
+    "execute at dragonai run forceload add ~140 ~-10 ~170 ~10",
+    "execute at dragonai positioned ~150 0 ~ positioned over world_surface run fill ~ ~ ~ ~3 ~2 ~3 red_sand",
+    "execute at dragonai positioned ~150 0 ~ positioned over world_surface run fill ~ ~ ~ ~3 ~2 ~3 red_sand"
+  ],
+  "plan": {
+    "notes": "Red sand only grows in badlands, thousands of blocks away; setup puts a small patch 150 blocks east of the bot. Find it, then dig four.",
+    "steps": [
+      { "skill": "explore_for", "args": { "target": "red_sand", "maxDistance": 256 } },
+      { "skill": "mine", "args": { "block": "red_sand", "count": 4 } }
+    ]
+  },
+  "expect": {
+    "inventory": { "red_sand": ">=4" },
+    "maxDeaths": 0
+  }
+}

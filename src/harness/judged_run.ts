@@ -10,6 +10,7 @@ import { installPacketTrace } from '../utils/packet_trace.js';
 import { applyProtocolFixes } from '../connection/protocol_fixes.js';
 import { logDir } from '../utils/paths.js';
 import { installReflexGuard } from '../reflexes/guard.js';
+import { PlacesMemory, setActivePlaces, startPlacesScan } from '../memory/places.js';
 import { OwnerSim, OwnerSpec, DEFAULT_OWNER_NAME, validateOwnerSpec } from './owner_sim.js';
 
 /**
@@ -113,6 +114,7 @@ export async function runJudged(
   let verdict: Verdict;
   let summary = '';
   let stopReflexes: (() => void) | null = null;
+  let stopPlaces: (() => void) | null = null;
   try {
     running = await server.start(world, { stdoutPath: path.join(runDir, 'server-stdout.log') });
     if (process.env.AICRAFT_PACKET_TRACE !== '0') process.env.AICRAFT_PACKET_TRACE = '1';
@@ -153,6 +155,11 @@ export async function runJudged(
     });
     await session.begin();
 
+    // Places memory: fresh per run (in the run folder), fed from the loaded chunks every few seconds.
+    const places = new PlacesMemory(path.join(runDir, 'places.json'));
+    setActivePlaces(places);
+    stopPlaces = startPlacesScan(reflexBot, places, { log: runLog });
+
     const abort = new AbortController();
     const deadline = setTimeout(() => abort.abort(new Error('time limit')), spec.timeoutSec * 1000);
     let polling = true;
@@ -190,6 +197,8 @@ export async function runJudged(
     verdict = errorVerdict(message);
   } finally {
     stopReflexes?.();
+    stopPlaces?.();
+    setActivePlaces(null);
     owner?.quit();
     bot?.quit();
     await new Promise((r) => setTimeout(r, 1000));

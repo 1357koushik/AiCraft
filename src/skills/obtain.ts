@@ -7,6 +7,7 @@ import { craftSkill } from './craft.js';
 import { mineSkill } from './mine.js';
 import { chopTreeSkill } from './chop_tree.js';
 import { useStationSkill } from './use_station.js';
+import { exploreForSkill } from './explore_for.js';
 
 /**
  * obtain: get `count` more of any item, by whatever route the game data offers: chop, craft, smelt or mine,
@@ -105,7 +106,14 @@ async function acquire(job: Job, item: string, count: number, alternatives?: str
 
       // Logs come from trees.
       if (names.every(isLog) || isLog(item)) {
-        const r = await step(job, `${need} ${item}`, chopTreeSkill, names.length > 1 ? { count: need } : { count: need, log: item });
+        const chopArgs = names.length > 1 ? { count: need } : { count: need, log: item };
+        let r = await step(job, `${need} ${item}`, chopTreeSkill, chopArgs);
+        if (r.status === 'failed' && r.cause === 'not_found_nearby') {
+          // No tree within reach: go looking for one, then chop again.
+          const found = await step(job, `find ${item}`, exploreForSkill, { target: names.length > 1 ? 'logs' : item });
+          if (found.status === 'failed') throw new ObtainStop(`No trees within reach and the search failed: ${found.message}`, found.cause ?? 'not_found_nearby', found.fix);
+          r = await step(job, `${need} ${item}`, chopTreeSkill, chopArgs);
+        }
         if (r.status === 'failed') throw new ObtainStop(`Could not chop logs: ${r.message}`, r.cause ?? 'unknown', r.fix);
         continue;
       }
@@ -189,14 +197,22 @@ async function viaSmelting(job: Job, item: string, need: number, way: { station:
 async function viaMining(job: Job, item: string, need: number, way: { blocks: string[] }): Promise<void> {
   const bot = job.ctx.bot;
   // Prefer a block kind that is actually nearby; ores come in stone and deepslate forms.
-  const near = way.blocks.find((b) => bot.findBlock({ matching: (x: any) => x.name === b, maxDistance: 48 })) ?? way.blocks[0];
+  const nearBlock = () => way.blocks.find((b) => bot.findBlock({ matching: (x: any) => x.name === b, maxDistance: 48 }));
+  let near = nearBlock();
+  if (!near) {
+    // Nothing within 48 blocks: go looking (the places memory first, then outward), then mine what was found.
+    const found = await step(job, `find ${way.blocks[0]}`, exploreForSkill, { target: way.blocks[0] });
+    if (found.status === 'failed') throw new ObtainStop(`No ${way.blocks[0]} within reach and the search failed: ${found.message}`, found.cause ?? 'not_found_nearby', found.fix);
+    near = nearBlock();
+  }
+  near ??= way.blocks[0];
   const plan = toolPlanFor(near, blockRequiresTool(near));
   if (plan.requiresTool && !plan.workingTools.some((t) => held(bot, [t]) > 0)) {
     const tool = minimumTool(plan);
     if (!tool) throw new ObtainStop(`No tool can harvest ${near}.`, 'missing_tool');
     await acquire(job, tool, 1);
   }
-  const r = await step(job, `${need} ${item}`, mineSkill, { block: near, count: need });
+  const r = await step(job, `${need} ${item}`, mineSkill, { block: near, count: need, maxDistance: 64 });
   if (r.status === 'failed') throw new ObtainStop(`Mining ${near} failed: ${r.message}`, r.cause ?? 'unknown', r.fix);
 }
 

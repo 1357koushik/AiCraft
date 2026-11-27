@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { SkillRegistry, StepRecord } from '../skills/contract.js';
 import { describeSkills } from '../skills/registry.js';
 import type { DoneWhen } from './decision.js';
+import { getPlaces } from '../memory/places.js';
 
 /**
  * The decision brief (ROADMAP.md section 5): what the LLM is shown at each decision point.
@@ -53,6 +54,7 @@ Rules:
 - craft walks to a crafting table within 32 blocks, or places one from your inventory, by itself: never add a separate place step for a table. If no table is near and none is held, craft one first (4 planks).
 - Only use place with coordinates you have seen to be free (air) in NEARBY or from a step result; never guess.
 - Items do not appear by themselves: gather or craft each ingredient first. Read the MISSING section; it is worked out from the game's own recipes.
+- When something you need is not in NEARBY, check KNOWN PLACES; if it is not there either, use explore_for to search for it. Use remember_place to name a spot ("base") and go_to {place} to return.
 - Only code decides whether the task is done, from done_when.
 
 Skills:
@@ -177,6 +179,9 @@ export function userBrief(bot: Bot, s: BriefState, req?: RequirementsSource): st
   }
   const near = nearby(bot);
   if (near.length) lines.push('NEARBY:', ...near.map((l) => `- ${l}`));
+  // Named places and the nearest remembered spot of each resource not already in NEARBY (at most 6 lines + header).
+  const known = getPlaces().summary(bot.entity.position, 6, 32, (k) => (/_(log|stem)$/.test(k) ? 'logs' : k));
+  if (known.length) lines.push('KNOWN PLACES (remembered; go_to {place} or explore_for uses them):', ...known.map((l) => `- ${l}`));
   if (s.journal.length) lines.push('ALREADY TRIED FOR THIS TASK:', ...s.journal.slice(-10).map((l) => `- ${l}`));
   lines.push(`BUDGET: decision ${s.callsUsed + 1} of ${s.callBudget}.`);
   return lines.join('\n');

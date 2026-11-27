@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Bot } from 'mineflayer';
 import { goals } from 'mineflayer-pathfinder';
 import { updatePathfinderMovements } from '../actions/techniques.js';
+import { getPlaces, normalizeName } from '../memory/places.js';
 import { ProgressWatchdog, SkillContext, SkillDefinition, SkillOutcome, FailureCause } from './contract.js';
 
 /**
@@ -11,12 +12,16 @@ import { ProgressWatchdog, SkillContext, SkillDefinition, SkillOutcome, FailureC
  * `travel` is exported for the other skills (place, store, take) that need to walk somewhere first.
  */
 
-const Args = z.object({
-  x: z.number().finite(),
-  y: z.number().finite(),
-  z: z.number().finite(),
-  range: z.number().min(0).max(64).default(1),
-});
+const Args = z
+  .object({
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    z: z.number().finite().optional(),
+    /** A name set with remember_place ("base"); used instead of x, y, z. */
+    place: z.string().min(1).max(40).optional(),
+    range: z.number().min(0).max(64).default(1),
+  })
+  .refine((a) => a.place !== undefined || (a.x !== undefined && a.y !== undefined && a.z !== undefined), { message: 'give x, y and z, or a place name' });
 type GoToArgs = z.infer<typeof Args>;
 
 /** Longest straight stretch handed to the pathfinder in one go. */
@@ -120,18 +125,31 @@ export async function travel(ctx: SkillContext, x: number, y: number, z: number,
   return result(false, 'Too many legs; the target is farther than 12000 blocks or the bot keeps being pushed back.', 'no_progress');
 }
 
+/** Resolves the target of a go_to step: the coordinates, or the named place. */
+function targetOf(a: GoToArgs): { x: number; y: number; z: number } | null {
+  if (a.x !== undefined && a.y !== undefined && a.z !== undefined && a.place === undefined) return { x: a.x, y: a.y, z: a.z };
+  const p = a.place !== undefined ? getPlaces().getNamed(a.place) : null;
+  return p ? { x: p.x, y: p.y, z: p.z } : null;
+}
+
 export const goToSkill: SkillDefinition<GoToArgs> = {
   name: 'go_to',
-  summary: 'go_to {x, y, z, range?=1}: walk (pathfinding around obstacles, any distance) to within `range` blocks of a point.',
+  summary: 'go_to {x, y, z, range?=1} or {place, range?}: walk (pathfinding around obstacles, any distance) to within `range` blocks of a point, or of a place named with remember_place.',
   args: Args,
   check(ctx, args) {
     if (!(ctx.bot as any).pathfinder) return { ok: false, cause: 'unknown', message: 'The pathfinder is not available.' };
     if (!ctx.bot.entity) return { ok: false, cause: 'unknown', message: 'The bot is not in the world.' };
-    if (Math.abs(args.y) > 400) return { ok: false, cause: 'invalid_args', message: `y=${args.y} is outside the world.` };
+    const t = targetOf(args);
+    if (!t) {
+      const known = getPlaces().listNamed().map((p) => p.name);
+      return { ok: false, cause: 'invalid_args', message: `I do not know a place called "${normalizeName(args.place ?? '')}".${known.length ? ` Known places: ${known.join(', ')}.` : ' No places are remembered yet.'}`, fix: 'use remember_place first, or give x, y, z' };
+    }
+    if (Math.abs(t.y) > 400) return { ok: false, cause: 'invalid_args', message: `y=${t.y} is outside the world.` };
     return { ok: true };
   },
   async run(ctx, args): Promise<SkillOutcome> {
-    const t = await travel(ctx, args.x, args.y, args.z, args.range);
+    const target = targetOf(args)!;
+    const t = await travel(ctx, target.x, target.y, target.z, args.range);
     const evidence = [`start ${t.start}`, `end ${t.end}`, `distance left ${t.left}`];
     if (t.ok) return { status: 'done', message: `Arrived at ${t.end} (${t.left} blocks from the target).`, evidence };
     return {
