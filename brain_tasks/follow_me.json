@@ -1,0 +1,74 @@
+{
+  "id": "follow_me",
+  "text": "follow me for the next minute",
+  "timeoutSec": 240,
+  "callBudget": 8,
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      103.5,
+      121,
+      100.5
+    ],
+    "script": [
+      {
+        "say": "follow me"
+      },
+      {
+        "wait": 8
+      },
+      {
+        "walk": [
+          113.5,
+          121,
+          100.5
+        ]
+      },
+      {
+        "wait": 12
+      },
+      {
+        "walk": [
+          123.5,
+          121,
+          100.5
+        ]
+      },
+      {
+        "wait": 12
+      },
+      {
+        "walk": [
+          123.5,
+          121,
+          110.5
+        ]
+      },
+      {
+        "wait": 12
+      }
+    ]
+  },
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "time set day",
+    "forceload add 80 80 150 135",
+    "tp dragonai 100.5 121 100.5",
+    "fill 90 120 90 135 120 130 stone",
+    "fill 90 121 90 135 128 130 air",
+    "fill 90 120 90 135 120 130 stone",
+    "fill 90 121 90 135 128 130 air",
+    "tp OwnerPlayer 103.5 121 100.5",
+    "tp dragonai 100.5 121 100.5",
+    "give dragonai bread 3"
+  ],
+  "expect": {
+    "nearOwner": {
+      "range": 5,
+      "minFraction": 0.8
+    },
+    "maxDeaths": 0
+  },
+  "seed": "20261109"
+}

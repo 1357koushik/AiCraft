@@ -15,6 +15,8 @@ import { systemPrompt, userBrief, RequirementsSource, BriefState } from './brief
 export interface BrainOptions {
   bot: Bot;
   task: string;
+  /** Name of the player the task comes from, shown in the brief together with where that player is. */
+  owner?: string;
   registry: SkillRegistry;
   llm: ChatClient;
   signal: AbortSignal;
@@ -106,7 +108,7 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
   const system = systemPrompt(o.registry);
   const record = o.record ?? (() => undefined);
 
-  const state: BriefState = { task: o.task, trigger: 'This is a new task.', notes: '', lastSteps: [], journal: [], callsUsed: 0, callBudget };
+  const state: BriefState = { task: o.task, owner: o.owner, trigger: 'This is a new task.', notes: '', lastSteps: [], journal: [], callsUsed: 0, callBudget };
   const result: BrainResult = { outcome: 'done', message: '', calls: 0, inputTokens: 0, outputTokens: 0, llmMs: 0, steps: [], notes: '' };
   // Failed steps by key, with the inventory at the time, so an identical retry with nothing changed is refused.
   const failed = new Map<string, { cause: string; inv: string }>();

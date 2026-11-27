@@ -23,6 +23,20 @@ export interface TaskExpectations {
   containers?: Array<{ x: number; y: number; z: number; items: Record<string, string> }>;
   /** The bot must end within `range` blocks of this point (read from the server's position data). */
   near?: { x: number; y: number; z: number; range: number };
+  /** The owner's item counts (inventory + equipment) read from the server, e.g. { oak_log: ">=5" }. Needs a task owner. */
+  ownerInventory?: Record<string, string>;
+  /**
+   * The bot must have been within `range` blocks of the owner in at least `minFraction` (default 0.8) of the polls
+   * made during the measured window. With `lastSeconds`, only the polls of the final that-many seconds count.
+   */
+  nearOwner?: { range: number; minFraction?: number; lastSeconds?: number };
+}
+
+/** One poll's distance between the bot and the owner (null when either was offline or had no position). */
+export interface OwnerDistanceSample {
+  /** Epoch ms of the poll. */
+  t: number;
+  d: number | null;
 }
 
 /** Results of the world checks, gathered by the session from RCON. */
@@ -41,6 +55,10 @@ export interface Evidence {
   deaths: number;
   world?: WorldEvidence;
   pos?: [number, number, number];
+  /** The owner's server-side item counts, when an owner is in the run and online. */
+  ownerItems?: Record<string, number>;
+  /** Bot-to-owner distances from every poll of the measured window. */
+  ownerDistances?: OwnerDistanceSample[];
 }
 
 export interface CheckResult {
@@ -85,6 +103,13 @@ export function validateExpectations(expect: TaskExpectations): void {
     if (!/^[a-z_]+:[a-z0-9_./]+$/.test(key)) throw new Error(`Invalid stat key "${key}" (use e.g. "crafted:stone_pickaxe")`);
     parseComparison(value);
   }
+  for (const value of Object.values(expect.ownerInventory ?? {})) parseComparison(value);
+  if (expect.nearOwner) {
+    const n = expect.nearOwner;
+    if (typeof n.range !== 'number' || !(n.range > 0)) throw new Error(`nearOwner.range must be a positive number, got ${JSON.stringify(n.range)}`);
+    if (n.minFraction !== undefined && !(typeof n.minFraction === 'number' && n.minFraction >= 0 && n.minFraction <= 1)) throw new Error('nearOwner.minFraction must be between 0 and 1');
+    if (n.lastSeconds !== undefined && !(typeof n.lastSeconds === 'number' && n.lastSeconds > 0)) throw new Error('nearOwner.lastSeconds must be a positive number');
+  }
   const isNum = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
   for (const b of expect.blocks ?? []) {
     if (![b.x, b.y, b.z].every(isNum) || typeof b.block !== 'string' || !b.block) throw new Error(`Invalid block expectation ${JSON.stringify(b)}`);
@@ -113,6 +138,8 @@ export function hasExpectations(expect: TaskExpectations | undefined): boolean {
       Object.keys(expect.stats ?? {}).length ||
       expect.dimension ||
       expect.near ||
+      Object.keys(expect.ownerInventory ?? {}).length ||
+      expect.nearOwner ||
       hasWorldExpectations(expect)
   );
 }
@@ -184,6 +211,31 @@ export function evaluateExpectations(expect: TaskExpectations, evidence: Evidenc
       actual: d === null ? 'unknown' : d.toFixed(1),
       ok: d !== null && d <= n.range,
       source: 'RCON data get entity Pos',
+    });
+  }
+  for (const [item, expr] of Object.entries(expect.ownerInventory ?? {})) {
+    const id = shortId(item);
+    const known = evidence.ownerItems !== undefined;
+    const actual = evidence.ownerItems?.[id] ?? 0;
+    results.push({ check: `owner inventory ${id}`, expected: expr, actual: known ? String(actual) : 'unknown', ok: known && compare(actual, parseComparison(expr)), source: 'RCON data get entity (owner)' });
+  }
+  if (expect.nearOwner) {
+    const n = expect.nearOwner;
+    const minFraction = n.minFraction ?? 0.8;
+    let samples = evidence.ownerDistances ?? [];
+    if (n.lastSeconds !== undefined && samples.length) {
+      const tEnd = samples[samples.length - 1].t;
+      samples = samples.filter((s) => s.t >= tEnd - n.lastSeconds! * 1000);
+    }
+    const within = samples.filter((s) => s.d !== null && s.d <= n.range).length;
+    const fraction = samples.length ? within / samples.length : 0;
+    const worst = samples.reduce((m, s) => (s.d === null ? m : Math.max(m, s.d)), 0);
+    results.push({
+      check: `bot within ${n.range} of the owner${n.lastSeconds !== undefined ? ` (last ${n.lastSeconds} s)` : ''}`,
+      expected: `>=${Math.round(minFraction * 100)}% of polls`,
+      actual: samples.length ? `${Math.round(fraction * 100)}% of ${samples.length} polls (farthest ${worst.toFixed(1)})` : 'no polls',
+      ok: samples.length > 0 && fraction >= minFraction,
+      source: 'RCON data get entity Pos, both players, every poll',
     });
   }
   if (expect.maxDeaths !== undefined) {

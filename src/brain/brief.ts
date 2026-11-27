@@ -11,6 +11,8 @@ import type { DoneWhen } from './decision.js';
 
 export interface BriefState {
   task: string;
+  /** The player the task comes from, when there is one. */
+  owner?: string;
   doneWhen?: DoneWhen;
   trigger: string;
   notes: string;
@@ -45,6 +47,8 @@ Rules:
 - Plan several steps ahead when the next steps are clear; you are asked again when the plan finishes, when a step fails or partly succeeds, or when something serious happens. Each step's preconditions are checked when it is reached, so a plan that goes stale stops safely.
 - Use only the skills listed below, with real item and block ids (no "minecraft:" prefix needed). Item tags like "#planks" or "#logs" mean any member.
 - Counts are how many MORE you want, not totals.
+- "The X", "all the X" or "your X" means every one of them: once you know the amount, process and count all of it, and make done_when match.
+- obtain gets any item by itself (chopping, crafting, smelting, mining, with tools and stations); prefer it for plain "get me N of X" goals, and use the smaller skills when the task says how, or when obtain reports a choice it cannot make.
 - When a step fails, read its cause and fix before choosing what to do next. Never repeat a step that failed with the same cause unless something relevant changed.
 - craft walks to a crafting table within 32 blocks, or places one from your inventory, by itself: never add a separate place step for a table. If no table is near and none is held, craft one first (4 planks).
 - Only use place with coordinates you have seen to be free (air) in NEARBY or from a step result; never guess.
@@ -119,7 +123,16 @@ function stepLine(r: StepRecord): string {
 export function userBrief(bot: Bot, s: BriefState, req?: RequirementsSource): string {
   const have = inventoryCounts(bot);
   const lines: string[] = [];
-  lines.push(`TASK: ${s.task}`);
+  lines.push(s.owner ? `TASK (from ${s.owner}): ${s.task}` : `TASK: ${s.task}`);
+  if (s.owner) {
+    const e = bot.players?.[s.owner]?.entity;
+    if (e?.position) {
+      const p = e.position;
+      lines.push(`OWNER ${s.owner}: at block ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}, ${p.distanceTo(bot.entity.position).toFixed(0)} blocks from you now`);
+    } else {
+      lines.push(`OWNER ${s.owner}: not in sight`);
+    }
+  }
   if (s.doneWhen) {
     const parts: string[] = [];
     if (s.doneWhen.inventory) parts.push(`inventory ${Object.entries(s.doneWhen.inventory).map(([item, expr]) => `${item} ${expr} (have ${have[item.replace(/^minecraft:/, '')] ?? 0})`).join(', ')}`);

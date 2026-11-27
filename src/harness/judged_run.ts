@@ -10,6 +10,7 @@ import { installPacketTrace } from '../utils/packet_trace.js';
 import { applyProtocolFixes } from '../connection/protocol_fixes.js';
 import { logDir } from '../utils/paths.js';
 import { installReflexGuard } from '../reflexes/guard.js';
+import { OwnerSim, OwnerSpec, DEFAULT_OWNER_NAME, validateOwnerSpec } from './owner_sim.js';
 
 /**
  * One judged run with a bare bot (no old agent loop): fresh seeded world, setup commands before measuring
@@ -26,6 +27,8 @@ export interface JudgedSpec {
   expect: TaskExpectations;
   checkpoint?: string;
   properties?: Record<string, string>;
+  /** A scripted second player who plays the human owner. Joins after the bot, before measuring starts. */
+  owner?: OwnerSpec;
 }
 
 export interface BodyContext {
@@ -82,6 +85,9 @@ export async function runJudged(
   const log = opts.log ?? ((l: string) => console.log(l));
   const botName = opts.botName ?? 'dragonai';
   validateExpectations(spec.expect);
+  if (spec.owner) validateOwnerSpec(spec.owner);
+  const ownerName = spec.owner ? spec.owner.name ?? DEFAULT_OWNER_NAME : undefined;
+  if (!ownerName && (spec.expect.ownerInventory || spec.expect.nearOwner)) throw new Error('ownerInventory and nearOwner need an "owner" block in the task.');
 
   const runId = `${spec.kind}_${stampNow()}_${spec.id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40)}`;
   const runDir = path.resolve(logDir('runs', runId));
@@ -95,7 +101,7 @@ export async function runJudged(
     log(line);
   };
 
-  const server = new HarnessServer({ players: [botName] });
+  const server = new HarnessServer({ players: ownerName ? [botName, ownerName] : [botName] });
   server.ensureInstance();
   const world = { name: runId, seed: spec.seed, checkpointDir: spec.checkpoint, properties: spec.properties };
   server.prepareWorld(world);
@@ -103,6 +109,7 @@ export async function runJudged(
 
   let running: RunningServer | null = null;
   let bot: Bot | null = null;
+  let owner: OwnerSim | null = null;
   let verdict: Verdict;
   let summary = '';
   let stopReflexes: (() => void) | null = null;
@@ -111,6 +118,14 @@ export async function runJudged(
     if (process.env.AICRAFT_PACKET_TRACE !== '0') process.env.AICRAFT_PACKET_TRACE = '1';
     bot = await connectBot(server.port, botName);
     installPacketTrace(bot, path.join(runDir, 'packets.ndjson'));
+    if (ownerName) {
+      // The instance folder is shared with queued runs, which rewrite whitelist.json with only their own players
+      // before this server read it, so write ours again and make the running server re-read it.
+      server.writeWhitelist();
+      runLog(`[setup] whitelist reload -> ${(await running.rcon.command('whitelist reload')).trim()}`);
+      owner = await OwnerSim.join(server.port, ownerName);
+      runLog(`[owner] ${ownerName} joined`);
+    }
     await bot.waitForTicks(40);
     // Reflexes run for the whole measured part: fight, flee, eat, escape lava and drowning, then let the skill resume.
     const reflexBot = bot;
@@ -120,14 +135,19 @@ export async function runJudged(
       const out = await running.rcon.command(cmd);
       runLog(`[setup] ${cmd} -> ${out.trim()}`);
     }
-    if (spec.setup?.length) await bot.waitForTicks(20);
+    if (owner && spec.owner?.spawn) {
+      const [x, y, z] = spec.owner.spawn;
+      const out = await running.rcon.command(`tp ${ownerName} ${x} ${y} ${z}`);
+      runLog(`[setup] tp ${ownerName} ${x} ${y} ${z} -> ${out.trim()}`);
+    }
+    if (spec.setup?.length || spec.owner?.spawn) await bot.waitForTicks(20);
 
     const session = new OracleSession({
       rcon: running.rcon,
       logPath: running.logPath,
       worldDir: running.worldDir,
       bot: botName,
-      owners: [],
+      owners: ownerName ? [ownerName] : [],
       expect: spec.expect,
       timelinePath: path.join(runDir, 'timeline.ndjson'),
     });
@@ -149,8 +169,12 @@ export async function runJudged(
 
     const b = bot;
     let out: BodyOutput;
+    // The owner's script runs alongside the body. It is waited for afterwards, so a bot that stops early (for
+    // example one that quits following) is still judged over the whole script.
+    const ownerRun = owner && spec.owner?.script?.length ? owner.run(spec.owner.script, abort.signal, runLog) : Promise.resolve();
     try {
       out = await body({ bot: b, signal: abort.signal, log: runLog, runDir });
+      await ownerRun;
     } finally {
       clearTimeout(deadline);
       polling = false;
@@ -166,6 +190,7 @@ export async function runJudged(
     verdict = errorVerdict(message);
   } finally {
     stopReflexes?.();
+    owner?.quit();
     bot?.quit();
     await new Promise((r) => setTimeout(r, 1000));
     if (running) {

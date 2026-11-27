@@ -130,12 +130,20 @@ export class HarnessServer {
       }
     }
 
-    const whitelist = this.players.map((name) => ({ uuid: offlinePlayerUuid(name), name }));
-    fs.writeFileSync(path.join(this.instanceDir, 'whitelist.json'), JSON.stringify(whitelist, null, 2));
-    fs.writeFileSync(path.join(this.instanceDir, 'ops.json'), '[]');
+    this.writeWhitelist();
 
     const passwordPath = path.join(this.instanceDir, '.rcon-password');
     if (!fs.existsSync(passwordPath)) fs.writeFileSync(passwordPath, crypto.randomBytes(18).toString('hex'));
+  }
+
+  /**
+   * The instance folder is shared by queued runs, and each run's ensureInstance writes it before waiting for the lock,
+   * so start() writes it again once the lock is held: a run must not start with the previous queued run's players.
+   */
+  writeWhitelist(): void {
+    const whitelist = this.players.map((name) => ({ uuid: offlinePlayerUuid(name), name }));
+    fs.writeFileSync(path.join(this.instanceDir, 'whitelist.json'), JSON.stringify(whitelist, null, 2));
+    fs.writeFileSync(path.join(this.instanceDir, 'ops.json'), '[]');
   }
 
   get rconPassword(): string {
@@ -270,6 +278,7 @@ export class HarnessServer {
   }
 
   private async startLocked(world: WorldOptions, opts: { stdoutPath?: string; readyTimeoutMs?: number }, releaseLock: () => void): Promise<RunningServer> {
+    this.writeWhitelist();
     await this.stopLeftoverServer();
     for (const port of [this.port, this.rconPort]) {
       if (await portInUse(port)) {

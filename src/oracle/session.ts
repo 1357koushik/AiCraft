@@ -3,7 +3,7 @@ import { RconClient } from './rcon.js';
 import { LogTailer, parseServerLogLine, isAssistingCommand, ServerLogEntry } from './log.js';
 import { readAdvancements, readStats, diffStats, shortId } from './files.js';
 import { snapshotPlayer, hasAdvancement, trackStat, readScore, PlayerSnapshot, testBlock, countRegion, containerItems } from './probe.js';
-import { TaskExpectations, Evidence, CheckResult, evaluateExpectations, hasExpectations, hasWorldExpectations, WorldEvidence } from './expect.js';
+import { TaskExpectations, Evidence, OwnerDistanceSample, CheckResult, evaluateExpectations, hasExpectations, hasWorldExpectations, WorldEvidence } from './expect.js';
 import { offlinePlayerUuid } from './uuid.js';
 
 /**
@@ -63,6 +63,8 @@ export class OracleSession {
   private discrepancies: string[] = [];
   private pollCount = 0;
   private lastWorld: WorldEvidence | undefined;
+  private lastOwnerSnapshot: PlayerSnapshot | null = null;
+  private ownerDistances: OwnerDistanceSample[] = [];
 
   constructor(private readonly options: SessionOptions) {
     this.tailer = new LogTailer(options.logPath);
@@ -153,7 +155,12 @@ export class OracleSession {
     for (const [key, objective] of this.statObjectives) statDeltas[key] = await readScore(rcon, bot, objective);
     // Regions cost one query per block, so they are re-read every fifth poll; the rest every poll.
     const world = await this.worldEvidence(this.pollCount++ % 5 === 0);
-    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world, pos: snapshot.pos };
+    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world, pos: snapshot.pos, ...this.ownerEvidence() };
+  }
+
+  private ownerEvidence(): Pick<Evidence, 'ownerItems' | 'ownerDistances'> {
+    if (!this.options.owners.length) return {};
+    return { ownerItems: this.lastOwnerSnapshot?.items, ownerDistances: this.ownerDistances };
   }
 
   /** One observation: snapshot, new log lines, and a live check of the expectations. */
@@ -162,9 +169,17 @@ export class OracleSession {
     const snapshot = await snapshotPlayer(rcon, bot);
     if (snapshot.online) this.lastOnlineSnapshot = snapshot;
     this.record({ kind: 'snapshot', player: snapshot });
+    let ownerNow: PlayerSnapshot | null = null;
     for (const owner of owners) {
       const ownerSnapshot = await snapshotPlayer(rcon, owner);
       if (ownerSnapshot.online) this.record({ kind: 'snapshot', player: ownerSnapshot });
+      if (owner === owners[0]) ownerNow = ownerSnapshot;
+    }
+    if (ownerNow) {
+      if (ownerNow.online) this.lastOwnerSnapshot = ownerNow;
+      const b = snapshot.pos;
+      const o = ownerNow.pos;
+      this.ownerDistances.push({ t: Date.now(), d: snapshot.online && ownerNow.online && b && o ? Math.hypot(b[0] - o[0], b[1] - o[1], b[2] - o[2]) : null });
     }
     this.drainLog();
     const evidence = await this.liveEvidence(snapshot.online ? snapshot : this.lastOnlineSnapshot ?? snapshot);
@@ -223,6 +238,7 @@ export class OracleSession {
       statDeltas: fileStats,
       dimension: snapshot?.dimension,
       deaths: this.deaths,
+      ...this.ownerEvidence(),
     };
     const checks = evaluateExpectations(expect, evidence, { stats: 'world stats file', advancements: 'world advancements file' });
     const allOk = checks.length > 0 && checks.every((c) => c.ok);
