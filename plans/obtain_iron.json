@@ -1,0 +1,15 @@
+{
+  "id": "obtain_iron",
+  "seed": "20261109",
+  "timeoutSec": 1200,
+  "setup": ["time set day"],
+  "plan": {
+    "notes": "One obtain step from nothing to iron ingots: wood, wooden pickaxe, stone, stone pickaxe, iron ore, fuel, a furnace, smelting. Iron ore must be findable within 48 blocks of where the bot ends up; if not, obtain must stop with not_found_nearby rather than wander.",
+    "steps": [{ "skill": "obtain", "args": { "item": "iron_ingot", "count": 3 } }]
+  },
+  "expect": {
+    "inventory": { "iron_ingot": ">=3" },
+    "stats": { "crafted:iron_ingot": ">=3" },
+    "maxDeaths": 0
+  }
+}

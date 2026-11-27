@@ -1,0 +1,15 @@
+{
+  "id": "obtain_stone_pickaxe",
+  "seed": "20261109",
+  "timeoutSec": 600,
+  "setup": ["time set day"],
+  "plan": {
+    "notes": "One obtain step from nothing: it must chop, craft the wooden tools, mine stone and craft the stone pickaxe on its own.",
+    "steps": [{ "skill": "obtain", "args": { "item": "stone_pickaxe", "count": 1 } }]
+  },
+  "expect": {
+    "inventory": { "stone_pickaxe": ">=1" },
+    "stats": { "crafted:stone_pickaxe": ">=1" },
+    "maxDeaths": 0
+  }
+}
