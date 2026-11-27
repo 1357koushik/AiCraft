@@ -18,21 +18,23 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 
 `npm run brain -- brain_tasks/<task>.json`. The LLM (Gemini, from `config/config.yaml`) answers each decision point with a short list of skill steps, an answer, a question for the owner, or giving up; code validates and runs the steps and asks again only when the plan finishes or a step does not.
 
-| Task (family) | Status | Notes |
-| --- | --- | --- |
-| "get me 4 oak logs" (obtain) | **Server-judged PASS**, 1 of 1 | |
-| "go to 108 121 103" (go) | **Server-judged PASS**, 1 of 1 | |
-| "put all your cobblestone in the chest at ..." (storage) | **Server-judged PASS**, 1 of 1 | chest contents checked by the judge |
-| "smelt the raw iron that is in the chest at ..." (process) | **Server-judged PASS**, 1 of 1 | take, place furnace, smelt |
-| "build a 3 block tall cobblestone pillar at ..." (build) | **Server-judged PASS**, 1 of 1 | each block checked by the judge |
-| "break the row of cobblestone blocks from ... to ..." (dig) | **Server-judged PASS**, 1 of 1 | region checked by the judge |
-| "how many oak logs do you have?" (question) | **PASS**, 1 of 1 | answer checked from the decision log |
-| "what do I need to craft a crafting table?" (question) | **PASS**, 1 of 1 | |
-| "give me a command block" (cannot do) | **PASS**, 1 of 1 | declined; inventory unchanged |
-| "turn on the lever at ..." (interact) | **FAIL**, 0 of 1 | The LLM set "be near the lever" as its done-condition, already true, and the loop finished without acting. Both causes fixed (trivially true conditions are sent back; block states are compared); rerun pending |
-| "craft a stone pickaxe" (progression) | **FAIL**, 0 of 2 | First run: the model wrote step arguments outside `args` (now folded in). Second run: one decision covered the whole wooden-tool stage (6 steps, all done), then mining stone in water lost the drops; the loop-breaker stopped it after 4 decisions. Waits for the `mine` rework |
+**Three-seed suite (seeds 20261109, 7, 42), on the current loop: 28 of 30 (93%).** 25 of the 30 runs needed one LLM call.
 
-All of these are single runs, so none meets the 5-run bar yet. The next step is the suite on three seeds.
+| Task (family) | Passed | Notes |
+| --- | --- | --- |
+| "go to 108 121 103" (go) | 3 of 3 | |
+| "put all your cobblestone in the chest at ..." (storage) | 3 of 3 | chest contents checked by the judge |
+| "build a 3 block tall cobblestone pillar at ..." (build) | 3 of 3 | each block checked by the judge |
+| "break the row of cobblestone blocks from ... to ..." (dig) | 3 of 3 | region checked by the judge |
+| "turn on the lever at ..." (interact) | 3 of 3 | done-condition `lever[powered=true]` |
+| "how many oak logs do you have?" (question) | 3 of 3 | answer checked from the decision log |
+| "what do I need to craft a crafting table?" (question) | 3 of 3 | |
+| "give me a command block" (cannot do) | 3 of 3 | declined; inventory unchanged |
+| "get me 4 oak logs" (obtain) | 2 of 3 | on one seed the only oak was unreachable from the spawn; the loop stopped after 4 decisions |
+| "smelt the raw iron that is in the chest at ..." (process) | 2 of 3 | once smelted 1 of 3 and called it done; the brief now says "the X" means all of it (not yet re-run) |
+| "craft a stone pickaxe" (progression) | **6 of 6** | median 4 LLM calls, 61 s |
+
+**With an owner (scripted second player), three seeds each:** "come here" 3 of 3, "give me 5 oak logs" 3 of 3 (checked in the owner's inventory), "follow me for the next minute" 3 of 3 (93% of polls within 5 blocks).
 
 ### The body (Phase 1): skills tested with hand-written plans, no LLM
 
@@ -45,11 +47,14 @@ All of these are single runs, so none meets the 5-run bar yet. The next step is 
 | `store`, `take`, `equip`, `eat` | **Server-judged PASS, 6 of 6** | `storage` (3 seeds, twice) |
 | `go_to`, `place` | **Server-judged PASS, 4 of 4** | `move_place` |
 | `chop_tree` | **Server-judged PASS, 6 of 6** | `chop_basics`; pillaring up to high logs is not proven |
-| `mine` | **6 of 6 in its own plans, but fails in the open world** | `mine_basics`, `mine_iron` pass on prepared platforms. In the full stone pickaxe plan it misses buried stone, counted a lost drop as done, and lost drops in water. Being reworked |
+| `mine` | **Server-judged PASS** in its own plans (6 of 6) and in the stone pickaxe plan (9 of 9) | reworked to dig through soft cover, count drops collected rather than blocks broken, and avoid water; the water and lost-drop recovery paths have not been exercised live |
 | `collect_drops` | **Server-judged PASS, 3 of 3** | `collect_basics` |
-| `use_block` (levers, doors, gates) | **Not yet run live** | only through the failed lever task above |
+| `use_block` (levers, doors, gates) | **Server-judged PASS** through the lever task (3 of 3) | |
 | Reflexes (fight, flee, eat, escape lava, swim up) with pause and resume | **Server-judged PASS, 1 of 1** (zombie at night) | `reflex_fight`: the walk waited for the fight, then finished |
-| Stone pickaxe from nothing, no setup, no LLM | **8 of 12, then 5 of 6 earlier** | failures: mining (3) and a zombie death before reflexes existed (1) |
+| Stone pickaxe from nothing, no setup, no LLM | **Server-judged PASS, 9 of 9** after the `mine` rework (8 of 12 before) | `stone_pickaxe` plan, three seeds |
+| `obtain` (any item: chop, craft, smelt, mine, with tools, fuel and stations) | **Stone pickaxe from nothing 3 of 3; iron ingots from nothing on all three seeds (4 of 4 after the fixes)** | `obtain_stone_pickaxe`, `obtain_iron` |
+| `come_to`, `follow`, `give` | **Server-judged PASS** through the owner tasks above | |
+| `inspect_container` | used by the process task | |
 | Mining with an enchanted pickaxe | **Server-judged PASS** | `enchanted_dig`, after the enchantments fix |
 
 ### The judge
@@ -75,8 +80,9 @@ Nether, fortress, blaze, piglin, stronghold, End and Ender Dragon code in `src/d
 - **Navigation skipped its arrival check under test fakes;** it now always checks.
 
 ## Known issues
-- **`mine` in the open world** (above): buried stone, drops lost in water, and a lost drop once counted as done.
-- **Tasks with an owner** (deliver, follow, guard) need the owner simulator and owner-inventory checks (Phase 4).
+- **Navigation on hilly terrain:** a tree visible but unreachable from the spawn defeats chop_tree and go_to; the loop gives up honestly but cannot route around it.
+- **Owner tasks so far are fixed in the task file;** the bot does not yet take tasks from chat, keep a queue, or guard the owner.
+- **No exploration skill yet:** `obtain` and `mine` work only with what is within about 48 blocks.
 - **Reflexes are basic:** melee only, no shield or bow, no shelter at night, no fall prediction.
 - **`use_station` paths not tried live:** running out of fuel mid-job, a full inventory, a station at given coordinates.
 - **Type-check gaps:** `tsconfig.json` covers only `src/`, not `tests/` or `scripts/`.

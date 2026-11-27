@@ -365,7 +365,13 @@ Known gaps, each picked up in the phase that needs it:
 - items in an open crafting grid or on the cursor are not counted
 - no repeat runs, and no record of LLM calls
 
-### Phase 1: A complete, trustworthy body · in progress
+### Progress as of 2026-11-27 (later the same day)
+- **Phase 1:** done except the arenas for every skill and pillaring in chop_tree. Skills on the contract: craft, mine, chop_tree, collect_drops, go_to, place, equip, eat, store, take, use_station, use_block, inspect_container. Reflexes with pause and resume. The judge checks blocks, regions, containers and position. The coverage check maps all 564 registry entries with no gaps. Two Mineflayer bugs fixed (entity_action ids, enchantments).
+- **Phase 2:** the decision loop runs; the three-seed suite of nine families passes 28 of 30, and "craft a stone pickaxe" 6 of 6 at a median of 4 LLM calls (target was 3).
+- **Phase 3:** `obtain` passes stone pickaxe and iron ingots from nothing on three seeds. Not started: explore_for, long-distance travel, places memory.
+- **Phase 4:** owner simulator, come_to, follow, give, and owner-inventory and stay-near checks; the three owner tasks pass on three seeds. Not started: chat intake, the task queue, guard, standing orders.
+
+### Phase 1: A complete, trustworthy body · mostly done
 
 Progress as of 2026-11-27:
 - **Done:** game data export and loader (`data/vanilla/1.21.6/`); skill contract and step-plan runner (`src/skills/contract.ts`); crafting fix, proven by a stress reproduction (0 of 20 loops lost items, against 5 of 6 before) and 9 of 9 live stone pickaxe passes; repeat runs with a pass-rate table; inventory packet trace; one-run-at-a-time harness lock; leftover verification code removed.
