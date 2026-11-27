@@ -14,7 +14,9 @@ import { DIG_REACH, FACE_OFFSETS, GoalReachBlock, canHold, countItems, eyeDistan
  * type works, block/incorrect_for_<material>_tool tags say which materials are too weak, the block's loot
  * table says what drops (ignoring silk touch), and minecraft-data's harvestTools says whether the block drops
  * nothing without a correct tool. Safety rules: never dig the block under the bot's own feet, never dig a block
- * that touches lava or water, never tunnel to reach a block (the pathfinder may not dig while walking).
+ * that touches lava or water. Walking may dig through cover under the pathfinder's own safety settings (no digging
+ * under falling blocks, no creating flows, drops of at most 3). `count` means break that many blocks AND collect their
+ * drops: a block whose drop was lost is replaced by mining another.
  */
 
 const Args = z.object({
@@ -108,6 +110,31 @@ function inspectTarget(bot: Bot, pos: Vec3): Verdict {
   return { ok: true, exposed };
 }
 
+/** True when a standing spot has water in its feet or head cell, or the cell below it is water. */
+function wetSpot(bot: Bot, x: number, y: number, z: number): boolean {
+  for (const dy of [0, 1]) {
+    const b = bot.blockAt(new Vec3(x, y + dy, z));
+    if (b && (b.name === 'water' || b.name === 'bubble_column')) return true;
+  }
+  return false;
+}
+
+function botInWater(bot: Bot): boolean {
+  const p = bot.entity.position.floored();
+  return wetSpot(bot, p.x, p.y, p.z) || Boolean((bot.entity as any).isInWater);
+}
+
+/** Water within two blocks of a target makes it a poor choice: the standing spot or the drops may end up wet. */
+function wetNear(bot: Bot, pos: Vec3): boolean {
+  for (let dx = -2; dx <= 2; dx++)
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dz = -2; dz <= 2; dz++) {
+        const b = bot.blockAt(pos.offset(dx, dy, dz));
+        if (b && (b.name === 'water' || b.name === 'bubble_column')) return true;
+      }
+  return false;
+}
+
 function standingOn(bot: Bot, pos: Vec3): boolean {
   const feet = bot.entity.position.floored();
   return feet.x === pos.x && feet.z === pos.z && feet.y > pos.y;
@@ -140,16 +167,21 @@ export const mineSkill: SkillDefinition<MineArgs> = {
     const excluded = new Set<string>();
     const broken: { x: number; y: number; z: number; block: string }[] = [];
     let mined = 0;
+    let lost = 0;
+    let consecutiveLost = 0;
+    let wetSkipped = 0;
+    let lostStreak = false;
     let hazardSkipped = 0;
     let unreachable = 0;
     let digFailures = 0;
     let everFound = false;
     let full = false;
-    const watchdog = new ProgressWatchdog(30000, 0, false);
+    const watchdog = new ProgressWatchdog(60000, 0, false);
     const dispose = stopOnAbort(ctx);
 
     try {
-      while (mined < args.count) {
+      // `count` means break count blocks AND collect their drops: a block whose drop was lost is replaced by another.
+      while (mined - lost < args.count) {
         if (ctx.signal.aborted) break;
         if (watchdog.stuck) break;
         if (!plan.drops.some((d) => canHold(bot, d))) {
@@ -170,7 +202,7 @@ export const mineSkill: SkillDefinition<MineArgs> = {
             excluded.add(posKey(pos));
             continue;
           }
-          scored.push({ pos, score: pos.offset(0.5, 0.5, 0.5).distanceTo(me) + (v.exposed ? 0 : 8) });
+          scored.push({ pos, score: Math.hypot(pos.x + 0.5 - me.x, pos.z + 0.5 - me.z) + Math.abs(pos.y - me.y) * 1.5 + (v.exposed ? 0 : 10) + (wetNear(bot, pos) ? 40 : 0) });
         }
         scored.sort((a, b) => a.score - b.score);
         const target = scored[0]?.pos;
@@ -179,11 +211,13 @@ export const mineSkill: SkillDefinition<MineArgs> = {
 
         // Get within reach without standing on it.
         if (!inReach(bot, target)) {
-          const res = await goTo(ctx, new GoalReachBlock(target), () => eyeDistance(bot, target), 8000, false);
+          const res = await goTo(ctx, new GoalReachBlock(target, undefined, (x, y, z) => !wetSpot(bot, x, y, z)), () => eyeDistance(bot, target), 8000, true, 3000);
           if (ctx.signal.aborted) break;
           if (!res.ok || !inReach(bot, target)) {
             unreachable++;
             excluded.add(key);
+            // Neighbours in the same pocket are almost certainly just as hard to reach: skip them in one go.
+            for (const q of positions) if (q.distanceTo(target) <= 2.5) excluded.add(posKey(q));
             evidence.push(`could not get within reach of ${args.block} at ${target} (${res.reason}${res.detail ? `: ${res.detail}` : ''})`);
             continue;
           }
@@ -202,6 +236,14 @@ export const mineSkill: SkillDefinition<MineArgs> = {
           continue;
         }
 
+        if (botInWater(bot)) {
+          // Never dig from a spot with the head in water: move on to another target (the goal above avoids wet spots).
+          hazardSkipped++;
+          wetSkipped++;
+          excluded.add(key);
+          evidence.push(`standing in water while reaching ${args.block} at ${target}; skipped it`);
+          continue;
+        }
         const tool = chooseTool(bot, plan, live);
         if (tool && bot.heldItem?.type !== tool.type) {
           try {
@@ -222,6 +264,7 @@ export const mineSkill: SkillDefinition<MineArgs> = {
           excluded.add(key);
           continue;
         }
+        const dropsAtDig = dropCount();
         await sleep(120);
         const after = bot.blockAt(target);
         if (after && after.name === args.block) {
@@ -242,6 +285,17 @@ export const mineSkill: SkillDefinition<MineArgs> = {
           windowMs: 4000,
         });
         if (got.stoppedBy === 'inventory_full') full = true;
+        if (dropCount() <= dropsAtDig) {
+          lost++;
+          consecutiveLost++;
+          evidence.push(`drop of ${args.block} at ${target} was lost (${got.left.length ? `still lying at ${got.left.map((d) => d.pos.floored()).join(', ')}` : 'gone: fell, despawned, burnt or washed away'}); mining one more`);
+          // Drops keep vanishing here (water, a pit, lava): stop breaking blocks instead of wasting the area.
+          if (consecutiveLost >= 2) {
+            lostStreak = true;
+            break;
+          }
+          for (const q of positions) if (q.distanceTo(target) <= 4) excluded.add(posKey(q));
+        } else consecutiveLost = 0;
       }
     } finally {
       dispose();
@@ -252,12 +306,13 @@ export const mineSkill: SkillDefinition<MineArgs> = {
     const worldDelta = { placed: [], broken };
     evidence.push(`tool: ${bot.heldItem?.name ?? 'bare hand'}`);
     evidence.push(`${[...dropSet].join('/')} ${dropsBefore} -> ${dropsBefore + gained}`);
+    if (wetSkipped) evidence.push(`skipped ${wetSkipped} target(s) because the bot would stand in water`);
     if (hazardSkipped) evidence.push(`skipped ${hazardSkipped} block(s) touching lava, water or fire`);
 
     if (ctx.signal.aborted) {
       return { status: 'interrupted', cause: 'interrupted', message: `mine was cancelled after breaking ${mined} ${args.block}.`, evidence, worldDelta };
     }
-    if (mined >= args.count) {
+    if (mined - lost >= args.count) {
       if (gained <= 0) {
         return {
           status: 'partial',
@@ -273,7 +328,10 @@ export const mineSkill: SkillDefinition<MineArgs> = {
 
     let cause: SkillOutcome['cause'];
     let fix: string | undefined;
-    if (full) {
+    if (lostStreak) {
+      cause = 'unreachable';
+      fix = `drops of ${args.block} keep getting lost here (water, a pit or lava); move to dry, flat ground and retry, or collect the items with collect_drops`;
+    } else if (full) {
       cause = 'inventory_full';
       fix = 'free inventory slots (drop or store items)';
     } else if (watchdog.stuck || digFailures) cause = 'no_progress';
@@ -282,13 +340,13 @@ export const mineSkill: SkillDefinition<MineArgs> = {
       fix = `the remaining ${args.block} touches lava or water; find another ${args.block}`;
     } else if (unreachable) {
       cause = 'unreachable';
-      fix = `dig a tunnel or stairs toward the ${args.block}, or go to where it is open`;
+      fix = `no path was found to the ${args.block} (the pathfinder may dig soft cover but not past lava, water or drops over 3 blocks); move closer or to open ground`;
     } else if (!everFound) cause = 'not_found_nearby';
     else cause = 'not_found_nearby';
     return {
-      status: mined > 0 ? 'partial' : 'failed',
+      status: mined - lost > 0 || gained > 0 ? 'partial' : 'failed',
       cause,
-      message: `Mined ${mined}/${args.count} ${args.block} (${cause}).`,
+      message: `Collected ${mined - lost}/${args.count} ${args.block} (${cause}); broke ${mined}, ${lost} drop(s) lost.`,
       fix,
       evidence,
       worldDelta,
