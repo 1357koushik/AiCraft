@@ -36,9 +36,15 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 
 **With an owner (scripted second player), three seeds each:** "come here" 3 of 3, "give me 5 oak logs" 3 of 3 (checked in the owner's inventory; re-run after the give fix below), "follow me for the next minute" 3 of 3 (93% of polls within 5 blocks), "protect me from the zombies for the next minute" 3 of 3 (3 zombies killed each time, owner took no damage), "guard me against the creeper for the next minute" 3 of 3 (creeper killed, owner unhurt, the yard's walls still intact), "get me 4 sand" 3 of 3.
 
+**Staying alive (Phase 5), three seeds each:** "it's getting dark, get through the night safely" with a bed held 3 of 3 (the LLM chose `sleep`; the server's `sleep_in_bed` stat and its clock confirm the night was skipped), "make me 2 cooked beef" with cows in a pen 3 of 3, and "build a pillar of 3 cobblestone at ..." with the bot killed 3 seconds in (`death_recovery`) 3 of 3: code waited for the respawn, walked back 44 blocks, picked up everything it had dropped, and the LLM then finished the pillar with the recovered blocks.
+
 ### The companion (Phase 4): tasks given in chat
 
-`npm run companion` connects to the server in `config/config.yaml`. Owners (`agent.owners`) type tasks in chat; they queue and run one at a time through the decision loop, and the bot reports the outcome in chat. `stop`, `stop all`, `pause`, `resume`, `status` and `what's next?` are answered by code at once, with no LLM call. Places memory is kept per server and survives restarts. `npm run companion:test -- companion_tasks/<task>.json` runs a judged chat scenario: a scripted owner speaks, and what the bot said is read from the server's own log.
+`npm run companion` connects to the server in `config/config.yaml`. Owners (`agent.owners`) type tasks in chat; they queue and run one at a time through the decision loop, and the bot reports the outcome in chat. `stop`, `stop all`, `pause`, `resume`, `status`, `what's next?`, `orders` and `cancel orders` are answered by code at once, with no LLM call.
+
+**Standing orders** ("always guard me", "every minute, put the cobblestone in the chest", "every night, sleep in your bed"): the LLM turns the request into a plan once, marked `standing`, and code keeps the plan and runs it again by itself, every N minutes, once a night or day, or whenever nothing else is running for a step that runs until stopped. A task from the owner sets a running order aside, and the order picks up again afterwards. The LLM is asked again only when an order's plan fails, and an order that fails 3 times in a row is set aside and the owner told. "stop" while an order runs ends it; so does "stop guarding" naming it.
+
+**Looking after itself:** after a death, code goes back for the dropped items before anything else (a running task does the same inside the decision loop and then tells the LLM what happened). When the food bar falls to 8 with nothing safe to eat, the companion starts its own errand to get food (the LLM picks how), and any task from the owner interrupts it. Places memory is kept per server and survives restarts. `npm run companion:test -- companion_tasks/<task>.json` runs a judged chat scenario: a scripted owner speaks, and what the bot said is read from the server's own log.
 
 | Chat scenario | Passed (seeds 20261109, 7, 42) | Checked |
 | --- | --- | --- |
@@ -46,6 +52,11 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 | "follow me", then "stop" | 3 of 3 | task cancelled; "Stopped" reply |
 | "how many oak logs do you have?" | 3 of 3 | "I have 10 oak logs." in the server log |
 | two tasks queued, "what's next?" asked while the first runs | 3 of 3 | both done in order (logs in the owner's inventory, pillar blocks in the world); queue listed in chat |
+| "from now on, always guard me", then "give me 2 bread", then zombies arrive | 3 of 3 | the guard order was set aside for the bread and resumed by itself; 3 zombies killed each time, owner took no damage, bread in the owner's inventory |
+| "every minute, put all the cobblestone you have into the chest at ...", with cobblestone arriving twice | 3 of 3 | 24 cobblestone in the chest (three rounds) from one LLM call to set it up and one to repair the first round's plan |
+| "every night, sleep in your bed" said by day, night falls 30 s later | 3 of 3 after the bed-spot fix (3 of 6 before) | `sleep_in_bed` stat and the server clock; one LLM call to set it up on two seeds |
+| killed while idle, 44 blocks from the respawn point | 3 of 3 | inventory on the server matches what was carried; no LLM call |
+| food drained to 6 with no food held, cows and a furnace nearby | 3 of 3 | food bar 20 on the server at the end; cows killed per the stats file |
 
 ### The body (Phase 1): skills tested with hand-written plans, no LLM
 
@@ -69,6 +80,12 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 | `explore_for`, `remember_place`, `go_to {place}`, places memory | **Server-judged PASS, 9 of 9** | `explore_far_block` (a red sand patch set 150 blocks away), `remember_and_return` (walk 180 blocks off, return by name), `find_sand`; three seeds each |
 | `inspect_container` | used by the process task | |
 | Mining with an enchanted pickaxe | **Server-judged PASS** | `enchanted_dig`, after the enchantments fix |
+| `sleep` (finds or places a bed, skips the night) | **Server-judged PASS, 3 of 3** | `sleep_bed`: `sleep_in_bed` stat 1 and the clock back to morning. Server refusals (monsters nearby, too far, occupied) are matched from message text in unit tests only |
+| `shelter` (walls or a capped hole, wait out the night, open again) | **Server-judged PASS, 6 of 6** | `shelter_night` (zombies summoned 22 blocks off) and `shelter_walls` (stone floor, walls only): no deaths, at most 40 tenths of damage, the clock back to morning |
+| `hunt` (passive animals, spares 2, never pets, villagers or named mobs) | **Server-judged PASS, 3 of 3** | `hunt_cows`; only cows tried live |
+| `obtain` of cooked food (hunt, then smelt) | **Server-judged PASS, 3 of 3** | `obtain_cooked_beef` |
+| Armor upkeep (code puts on better armor and a shield) | **Server-judged PASS, 3 of 3** | `armor_upkeep`: leather boots and a golden helmet swapped for iron; all five slots read from the server's `equipment` data |
+| `recover_items` (back to the death spot for the drops) | **Server-judged PASS, 6 of 6** | `death_recovery` and `idle_death` |
 
 ### The judge
 | Check | Status |
@@ -78,9 +95,11 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 | Bot position | Used by the go task above |
 | Owner's inventory, owner nearby, owner's damage taken | Used by the owner, guard and companion tasks (damage from the owner's `damage_taken` stat, in hit points) |
 | What the bot said in chat | Read from the server log by the companion runner |
+| What the bot wears, the bot's food bar, the time of day | `equipment`, `food` and `daytime` checks over RCON, used by the armor, hunger and night tasks |
+| Things the world does during a run | A task file's `events` (a kill, a mob, nightfall, items arriving) are run by the harness at set times and listed in the verdict as world events, apart from assistance |
 | Items in a crafting grid or on the cursor | Not visible to RCON |
 
-Across all judged runs so far (counted from the run folders): 270 PASS, 60 FAIL, 14 ERROR, 7 UNVERIFIED, 1 ASSISTED (the deliberate `/give` check). The UNVERIFIED runs are early chat scenarios that had no server-checkable expectation. The errors are harness problems, mostly runs that collided on the server before the queueing lock existed.
+Across all judged runs so far (counted from the run folders): 319 PASS, 75 FAIL, 14 ERROR, 7 UNVERIFIED, 2 ASSISTED (the deliberate `/give` check, and the first idle-death run, before declared world events were told apart from help). The UNVERIFIED runs are early chat scenarios that had no server-checkable expectation. The errors are harness problems, mostly runs that collided on the server before the queueing lock existed.
 
 ### The old agent (`npm start`, `npm run task`)
 Still runs: a Mineflayer bot with an LLM picking one action about once a second, hand-written goal plans, and about 58 older actions. With the crafting fix it passed "craft a stone pickaxe" 9 of 9 on three seeds. It is replaced by the decision loop above and is no longer developed.
@@ -95,15 +114,25 @@ Nether, fortress, blaze, piglin, stronghold, End and Ender Dragon code in `src/d
 - **Navigation skipped its arrival check under test fakes;** it now always checks.
 - **`give` lost items.** `bot.toss` sends a pick-up, several drop clicks and a put-back in one burst with one state number; the server applied only some (5 meant, 2 arrived). From 1 block away the bot also picked its own drops back up. `give` now drops one settled click at a time (`dropReliably`), keeps 1.8 to 2.6 blocks away, steps back during the pickup delay, and counts what the player picked up from the server's collect packets. The chat version of "give me 5 oak logs" passed 1 of 3 before; after the fix, every give task (chat_bring_logs, chat_queue, bring_logs) passes 9 of 9 across the three seeds.
 - **The places scan blocked the event loop for seconds,** which stalls the 4 Hz reflexes; it now yields every 3 ms (longest slice 3 to 5 ms live).
+- **The verdict called a test's own kill "assistance".** Commands a task file declares as world events are now matched to their log lines and listed apart.
+- **"Always guard me" guarded the bot's own spot on one seed:** the LLM sent `guard {}` with no player. The prompt now says "me" means the owner and must be passed to guard, follow, come_to and give; the rerun named the owner.
+- **A nightly sleep order failed on one seed** because the LLM gave the owner's position as the bed's; the repair kept the mistake and the order was set aside after 3 tries. `sleep` now falls back to a bed nearby or the one held when the given spot has none.
+- **The bed went on the owner's feet:** `sleep` looked only at blocks when choosing where to put a held bed, so next to the owner it picked the cells the owner stood in and the server refused it. It now skips cells any player or mob stands in.
+- **"Get through the night" stalled on all seeds:** done_when could not say "the night is over", and the LLM kept writing conditions that were already true. done_when gained `time_of_day` (and `food_at_least` for eating); then 3 of 3.
 - **A JSON task file wrote the regex `\b10\b` with single backslashes, so `\b` became a backspace,** which failed a correct answer; the companion runner now refuses patterns with control characters.
 
 ## Known issues
 - **Navigation on hilly terrain:** a tree visible but unreachable from the spawn defeats chop_tree and go_to; the loop gives up honestly but cannot route around it.
-- **No standing orders yet** ("always guard me", "keep the furnace fueled"); a task runs once and ends.
+- **Repairing a failed standing order can repeat the mistake:** the LLM sees the failure, but the nightly sleep order got the same wrong coordinates twice before being set aside.
+- **`give` to a player who stands still:** in the standing-guard runs, 1 of 2 bread landed about 1.5 blocks beside the owner and was not picked up; the loop gave again and once the owner ended with 3. A real player would walk over; the scripted owner does not.
+- **No fuel-only furnace step yet,** so "keep the furnace fuelled" is not possible; the periodic order was tested with storing instead.
 - **Exploration is proven only up to 256 blocks;** the nearest villages on the test seeds are 700 to 1250 blocks away, so village finding is untested. Places memory starts empty in judged runs, so reloading it from disk is tested only in unit tests.
 - **`guard` does not fetch its own gear:** the guard tasks give an iron sword and iron armor in setup.
 - **Zombie test fragility:** mobs come out only if their pen is within their 35-block follow range of the owner.
-- **Reflexes are basic:** melee only, no shield or bow, no shelter at night, no fall prediction.
+- **Reflexes are basic:** melee only, no shield or bow, no fall prediction. Fighting or fleeing can run the bot off a ledge, and a reflex weapon swap can race a skill's equip and leave a stack on the cursor. Shelter is a skill the LLM or a standing order chooses, not a reflex.
+- **`shelter` with a mob already next to the bot:** the hole method has no answer; the live tests start mobs 22 blocks away.
+- **`hunt` cannot search:** `explore_for` finds blocks, not animals, so with no animals near, hunt can only suggest walking to grassland or a village. Only cows were hunted live.
+- **Harness lock is not fair:** queued runs can wait behind another batch for half an hour (`HARNESS_LOCK_WAIT_SEC` raises the limit).
 - **`use_station` paths not tried live:** running out of fuel mid-job, a full inventory, a station at given coordinates.
 - **Type-check gaps:** `tsconfig.json` covers only `src/`, not `tests/` or `scripts/`.
 
