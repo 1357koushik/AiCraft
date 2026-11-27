@@ -95,7 +95,7 @@ Nether, fortress, blaze, piglin, stronghold, End and Ender Dragon code in `src/d
 - **Navigation skipped its arrival check under test fakes;** it now always checks.
 - **`give` lost items.** `bot.toss` sends a pick-up, several drop clicks and a put-back in one burst with one state number; the server applied only some (5 meant, 2 arrived). From 1 block away the bot also picked its own drops back up. `give` now drops one settled click at a time (`dropReliably`), keeps 1.8 to 2.6 blocks away, steps back during the pickup delay, and counts what the player picked up from the server's collect packets. The chat version of "give me 5 oak logs" passed 1 of 3 before; after the fix, every give task (chat_bring_logs, chat_queue, bring_logs) passes 9 of 9 across the three seeds.
 - **The places scan blocked the event loop for seconds,** which stalls the 4 Hz reflexes; it now yields every 3 ms (longest slice 3 to 5 ms live).
-- **A JSON task file wrote the regex `10` as a backspace,** which failed a correct answer; the companion runner now refuses patterns with control characters.
+- **A JSON task file wrote the regex `\b10\b` with single backslashes, so `\b` became a backspace,** which failed a correct answer; the companion runner now refuses patterns with control characters.
 
 ## Known issues
 - **Navigation on hilly terrain:** a tree visible but unreachable from the spawn defeats chop_tree and go_to; the loop gives up honestly but cannot route around it.
