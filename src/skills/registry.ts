@@ -1,5 +1,6 @@
 import type { SkillDefinition, SkillRegistry } from './contract.js';
 import { craftSkill } from './craft.js';
+import { useBlockSkill } from './use_block.js';
 import { chopTreeSkill } from './chop_tree.js';
 import { collectDropsSkill } from './collect_drops.js';
 import { mineSkill } from './mine.js';
@@ -15,7 +16,7 @@ import { useStationSkill } from './use_station.js';
  * The skill catalogue: every skill the step-plan runner (and later the LLM) can call.
  * A skill is added here only once it passes its live test.
  */
-export const ALL_SKILLS: SkillDefinition[] = [craftSkill, goToSkill, placeSkill, equipSkill, eatSkill, storeSkill, takeSkill, chopTreeSkill, mineSkill, collectDropsSkill, useStationSkill];
+export const ALL_SKILLS: SkillDefinition[] = [craftSkill, goToSkill, placeSkill, equipSkill, eatSkill, storeSkill, takeSkill, chopTreeSkill, mineSkill, collectDropsSkill, useStationSkill, useBlockSkill];
 
 export function buildRegistry(skills: SkillDefinition[] = ALL_SKILLS): SkillRegistry {
   const registry: SkillRegistry = new Map();

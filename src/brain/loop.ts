@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import { runPlan, SkillRegistry, StepRecord } from '../skills/contract.js';
 import { parseComparison, compare } from '../oracle/expect.js';
 import { ChatClient } from './llm_client.js';
@@ -28,7 +29,7 @@ export interface BrainOptions {
 }
 
 export interface BrainResult {
-  outcome: 'done' | 'gave_up' | 'asked_owner' | 'budget_exhausted' | 'stalled' | 'cancelled' | 'llm_error';
+  outcome: 'done' | 'answered' | 'gave_up' | 'asked_owner' | 'budget_exhausted' | 'stalled' | 'cancelled' | 'llm_error';
   message: string;
   calls: number;
   inputTokens: number;
@@ -45,19 +46,50 @@ function inventory(bot: Bot): Record<string, number> {
   return out;
 }
 
-/** Checks the done-condition from what the bot can see. Only code decides that a task is finished. */
-export function isDone(bot: Bot, doneWhen: DoneWhen | undefined): boolean {
-  if (!doneWhen?.inventory || !Object.keys(doneWhen.inventory).length) return false;
-  const have = inventory(bot);
-  return Object.entries(doneWhen.inventory).every(([item, expr]) => compare(have[item.replace(/^minecraft:/, '')] ?? 0, parseComparison(expr)));
+/** Compares a block with "name" or "name[prop=value,...]"; every listed property must match. */
+function blockMatches(bot: Bot, x: number, y: number, z: number, want: string): boolean | null {
+  const b = bot.blockAt(new Vec3(Math.floor(x), Math.floor(y), Math.floor(z)));
+  if (!b) return null; // not loaded: can't tell from here
+  const m = want.replace(/^minecraft:/, '').match(/^([a-z0-9_]+)(?:\[(.*)\])?$/);
+  if (!m) return false;
+  const [, name, props] = m;
+  if (name === 'air') return b.name === 'air' || b.name === 'cave_air' || b.name === 'void_air';
+  if (b.name !== name) return false;
+  if (!props) return true;
+  const actual: Record<string, unknown> = (b as any).getProperties?.() ?? {};
+  return props.split(',').every((kv) => {
+    const [k, v] = kv.split('=').map((t) => t.trim());
+    return String(actual[k]) === v;
+  });
 }
 
-/** How far the inventory is from the done-condition, in missing items. Lower is better. */
+/** Checks the done-condition from what the bot can see. Only code decides that a task is finished. */
+export function isDone(bot: Bot, doneWhen: DoneWhen | undefined): boolean {
+  if (!doneWhen) return false;
+  const parts: boolean[] = [];
+  if (doneWhen.inventory && Object.keys(doneWhen.inventory).length) {
+    const have = inventory(bot);
+    parts.push(Object.entries(doneWhen.inventory).every(([item, expr]) => compare(have[item.replace(/^minecraft:/, '')] ?? 0, parseComparison(expr))));
+  }
+  if (doneWhen.blocks?.length) parts.push(doneWhen.blocks.every((b) => blockMatches(bot, b.x, b.y, b.z, b.block) === true));
+  if (doneWhen.near) {
+    const n = doneWhen.near;
+    parts.push(bot.entity.position.distanceTo(new Vec3(n.x + 0.5, n.y, n.z + 0.5)) <= n.range + 0.5);
+  }
+  return parts.length > 0 && parts.every(Boolean);
+}
+
+/** How far the bot is from the done-condition: missing items, wrong blocks, and distance. Lower is better. */
 function shortfall(bot: Bot, doneWhen: DoneWhen | undefined): number {
-  if (!doneWhen?.inventory) return Number.POSITIVE_INFINITY;
+  if (!doneWhen) return Number.POSITIVE_INFINITY;
   const have = inventory(bot);
   let missing = 0;
-  for (const [item, expr] of Object.entries(doneWhen.inventory)) {
+  for (const b of doneWhen.blocks ?? []) if (blockMatches(bot, b.x, b.y, b.z, b.block) !== true) missing++;
+  if (doneWhen.near) {
+    const n = doneWhen.near;
+    missing += Math.max(0, Math.floor(bot.entity.position.distanceTo(new Vec3(n.x + 0.5, n.y, n.z + 0.5)) - n.range));
+  }
+  for (const [item, expr] of Object.entries(doneWhen.inventory ?? {})) {
     const c = parseComparison(expr);
     const n = have[item.replace(/^minecraft:/, '')] ?? 0;
     if (c.op === '>=' || c.op === '>' || c.op === '==') missing += Math.max(0, c.value + (c.op === '>' ? 1 : 0) - n);
@@ -129,14 +161,22 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
     const d = parsed.decision;
     state.notes = d.notes;
     if (d.done_when && !state.doneWhen) {
+      // A condition that is already true before any step has run cannot tell whether the task was done.
+      if (result.steps.length === 0 && isDone(o.bot, d.done_when) && !d.answer && !d.give_up && !d.ask_owner) {
+        state.trigger = `Your done_when ${JSON.stringify(d.done_when)} is already true now, before anything was done, so it cannot show the task was finished. Describe the end state the owner asked for (for a block, include its state, e.g. "lever[powered=true]").`;
+        state.journal.push(`Rejected done_when ${JSON.stringify(d.done_when)}: already true at the start.`);
+        o.log(`[brain] rejected done_when that is already true: ${JSON.stringify(d.done_when)}`);
+        continue;
+      }
       state.doneWhen = d.done_when;
       best = shortfall(o.bot, state.doneWhen);
       o.log(`[brain] done_when ${JSON.stringify(d.done_when)}`);
     }
+    if (d.answer) return finish('answered', d.answer);
     if (d.give_up) return finish('gave_up', d.give_up);
     if (d.ask_owner) return finish('asked_owner', d.ask_owner);
     if (!state.doneWhen) {
-      state.trigger = 'You did not set done_when. Set it in this reply.';
+      state.trigger = 'You did not set done_when. Set it in this reply (or send "answer" if the task is only a question).';
       continue;
     }
     if (isDone(o.bot, state.doneWhen)) continue;

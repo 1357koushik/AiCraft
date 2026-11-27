@@ -153,7 +153,7 @@ export class OracleSession {
     for (const [key, objective] of this.statObjectives) statDeltas[key] = await readScore(rcon, bot, objective);
     // Regions cost one query per block, so they are re-read every fifth poll; the rest every poll.
     const world = await this.worldEvidence(this.pollCount++ % 5 === 0);
-    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world };
+    return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world, pos: snapshot.pos };
   }
 
   /** One observation: snapshot, new log lines, and a live check of the expectations. */
@@ -217,6 +217,7 @@ export class OracleSession {
     }
     const evidence: Evidence = {
       world,
+      pos: snapshot?.pos,
       items: snapshot?.items ?? {},
       advancements: fileAdvancements,
       statDeltas: fileStats,

@@ -23,6 +23,10 @@ export interface BrainTaskSpec {
   setup?: string[];
   expect: TaskExpectations;
   callBudget?: number;
+  /** For tasks judged by the decision itself: "answered" for a question, "gave_up" for an impossible request. */
+  expectOutcome?: BrainResult['outcome'];
+  /** For questions: every one of these must appear in the answer (case-insensitive). */
+  expectAnswerIncludes?: string[];
   checkpoint?: string;
   properties?: Record<string, string>;
 }
@@ -38,6 +42,8 @@ export function loadBrainTask(filePath: string): BrainTaskSpec {
     setup: raw.setup ?? [],
     expect: raw.expect ?? {},
     callBudget: raw.callBudget,
+    expectOutcome: raw.expectOutcome,
+    expectAnswerIncludes: raw.expectAnswerIncludes,
     checkpoint: raw.checkpoint,
     properties: raw.properties,
   };
@@ -97,5 +103,26 @@ export async function runBrainTask(
     },
     { log: opts.log, extraFiles: { 'task.json': spec } }
   );
+  // Decision-level checks (the server cannot see a question being answered or a request being declined).
+  const b = brain as BrainResult | null;
+  if (spec.expectOutcome || spec.expectAnswerIncludes?.length) {
+    const checks: { check: string; expected: string; actual: string; ok: boolean; source: string }[] = [];
+    if (spec.expectOutcome) {
+      checks.push({ check: 'decision outcome', expected: spec.expectOutcome, actual: b?.outcome ?? 'none', ok: b?.outcome === spec.expectOutcome, source: 'brain decision log' });
+    }
+    for (const word of spec.expectAnswerIncludes ?? []) {
+      const said = b?.outcome === 'answered' ? b.message : '';
+      checks.push({ check: `answer mentions "${word}"`, expected: 'yes', actual: said.toLowerCase().includes(word.toLowerCase()) ? 'yes' : 'no', ok: said.toLowerCase().includes(word.toLowerCase()), source: 'brain decision log' });
+    }
+    out.verdict.checks.push(...checks);
+    if (checks.some((c) => !c.ok) && (out.verdict.status === 'PASS' || out.verdict.status === 'UNVERIFIED')) {
+      out.verdict.status = 'FAIL';
+      out.verdict.reason = `Decision check failed: ${checks.filter((c) => !c.ok).map((c) => c.check).join(', ')}`;
+    } else if (out.verdict.status === 'UNVERIFIED' && checks.every((c) => c.ok)) {
+      out.verdict.status = 'PASS';
+      out.verdict.reason = 'Decision checks passed and no world change was expected.';
+    }
+    fs.writeFileSync(path.join(out.runDir, 'verdict.json'), JSON.stringify(out.verdict, null, 2));
+  }
   return { ...out, brain };
 }

@@ -1,0 +1,16 @@
+{
+  "id": "obtain_logs",
+  "text": "get me 4 oak logs",
+  "seed": "20261109",
+  "timeoutSec": 300,
+  "callBudget": 8,
+  "setup": [
+    "time set day"
+  ],
+  "expect": {
+    "inventory": {
+      "oak_log": ">=4"
+    },
+    "maxDeaths": 0
+  }
+}

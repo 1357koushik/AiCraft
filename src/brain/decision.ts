@@ -6,11 +6,20 @@ import { StepSchema, SkillRegistry, validatePlan, StepPlan } from '../skills/con
  * question for the owner, or giving up, plus its own running notes for the task. Data only, never code.
  */
 
+const Coord = z.number().finite();
 export const DoneWhenSchema = z
   .object({
+    /** Item counts the bot must hold, e.g. { "stone_pickaxe": ">=1" }. */
     inventory: z.record(z.string().regex(/^(>=|<=|==|=|>|<)?\s*\d+$/)).optional(),
+    /** Blocks that must be at these spots ("air" for a cleared spot). */
+    blocks: z.array(z.object({ x: Coord, y: Coord, z: Coord, block: z.string().min(1) }).strict()).max(256).optional(),
+    /** The bot must be within `range` blocks of this point. */
+    near: z.object({ x: Coord, y: Coord, z: Coord, range: z.number().positive().max(64).default(2) }).strict().optional(),
   })
-  .strict();
+  .strict()
+  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near), {
+    message: 'done_when needs at least one of inventory, blocks or near',
+  });
 export type DoneWhen = z.infer<typeof DoneWhenSchema>;
 
 export const DecisionSchema = z
@@ -19,6 +28,8 @@ export const DecisionSchema = z
     steps: z.array(StepSchema).max(12).default([]),
     done_when: DoneWhenSchema.optional(),
     ask_owner: z.string().max(300).optional(),
+    /** The reply to a question that needs no action ("how do I make a piston?", "how many logs do you have?"). */
+    answer: z.string().max(1200).optional(),
     give_up: z.string().max(300).optional(),
   })
   .strict();
@@ -79,8 +90,8 @@ export function parseDecision(text: string, registry: SkillRegistry, knownItems:
   const parsed = DecisionSchema.safeParse(normalizeSteps(raw));
   if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => `${i.path.join('.') || 'reply'}: ${i.message}`).join('; ') };
   const d = parsed.data;
-  const choices = [d.steps.length > 0, Boolean(d.ask_owner), Boolean(d.give_up)].filter(Boolean).length;
-  if (choices !== 1) return { ok: false, error: 'send exactly one of: a non-empty "steps" list, "ask_owner", or "give_up"' };
+  const choices = [d.steps.length > 0, Boolean(d.ask_owner), Boolean(d.give_up), Boolean(d.answer)].filter(Boolean).length;
+  if (choices !== 1) return { ok: false, error: 'send exactly one of: a non-empty "steps" list, "answer", "ask_owner", or "give_up"' };
   for (const item of Object.keys(d.done_when?.inventory ?? {})) {
     if (!knownItems.has(item.replace(/^minecraft:/, ''))) return { ok: false, error: `done_when names an unknown item "${item}"` };
   }

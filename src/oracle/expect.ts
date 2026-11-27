@@ -21,6 +21,8 @@ export interface TaskExpectations {
   regions?: Array<{ from: [number, number, number]; to: [number, number, number]; block: string; mode?: 'all' | 'none' }>;
   /** Container blocks that must hold these item counts, e.g. { x, y, z, items: { iron_ingot: ">=20" } }. */
   containers?: Array<{ x: number; y: number; z: number; items: Record<string, string> }>;
+  /** The bot must end within `range` blocks of this point (read from the server's position data). */
+  near?: { x: number; y: number; z: number; range: number };
 }
 
 /** Results of the world checks, gathered by the session from RCON. */
@@ -38,6 +40,7 @@ export interface Evidence {
   dimension?: string;
   deaths: number;
   world?: WorldEvidence;
+  pos?: [number, number, number];
 }
 
 export interface CheckResult {
@@ -109,6 +112,7 @@ export function hasExpectations(expect: TaskExpectations | undefined): boolean {
       (expect.advancements ?? []).length ||
       Object.keys(expect.stats ?? {}).length ||
       expect.dimension ||
+      expect.near ||
       hasWorldExpectations(expect)
   );
 }
@@ -170,6 +174,18 @@ export function evaluateExpectations(expect: TaskExpectations, evidence: Evidenc
       });
     }
   });
+  if (expect.near) {
+    const n = expect.near;
+    const p = evidence.pos;
+    const d = p ? Math.hypot(p[0] - (n.x + 0.5), p[1] - n.y, p[2] - (n.z + 0.5)) : null;
+    results.push({
+      check: `bot within ${n.range} of ${n.x} ${n.y} ${n.z}`,
+      expected: `<=${n.range}`,
+      actual: d === null ? 'unknown' : d.toFixed(1),
+      ok: d !== null && d <= n.range,
+      source: 'RCON data get entity Pos',
+    });
+  }
   if (expect.maxDeaths !== undefined) {
     results.push({ check: 'deaths', expected: `<=${expect.maxDeaths}`, actual: String(evidence.deaths), ok: evidence.deaths <= expect.maxDeaths, source: 'bot_oracle death events' });
   }

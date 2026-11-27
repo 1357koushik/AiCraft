@@ -31,9 +31,12 @@ export function systemPrompt(registry: SkillRegistry): string {
 Reply with ONE JSON object and nothing else:
 {"notes": "<your running notes for this task: sub-goals, what is done, what you plan next; under 600 characters>",
  "steps": [{"skill": "<name>", "args": {...}}, ...],     // 1 to 12 steps, run in order
- "done_when": {"inventory": {"<item>": ">=N"}}            // only on your first reply: how code can tell the task is finished
+ "done_when": {...}                                       // only on your first reply: how code can tell the task is finished
 }
+done_when uses any of: "inventory": {"<item>": ">=N"} (counts held), "blocks": [{"x":..,"y":..,"z":..,"block":"cobblestone"}] (use "air" for a cleared spot; add states when they matter, e.g. "lever[powered=true]", "oak_door[open=true]"), "near": {"x":..,"y":..,"z":..,"range":2} (where the bot must end up).
+done_when must describe the result the owner asked for, not a step on the way to it, and must not already be true before you act.
 Example of one step: {"skill": "craft", "args": {"item": "stick", "count": 4}}. Arguments always go inside "args".
+or {"notes": "...", "answer": "<your reply>"} when the task is only a question (use the inventory, state and recipes shown below; never guess game facts),
 or {"notes": "...", "ask_owner": "<one short question>"} when the request is unclear,
 or {"notes": "...", "give_up": "<why it cannot be done>"} when it is impossible in survival (no commands, no creative).
 
@@ -114,9 +117,12 @@ export function userBrief(bot: Bot, s: BriefState, req?: RequirementsSource): st
   const have = inventoryCounts(bot);
   const lines: string[] = [];
   lines.push(`TASK: ${s.task}`);
-  if (s.doneWhen?.inventory) {
-    const progress = Object.entries(s.doneWhen.inventory).map(([item, expr]) => `${item} ${expr} (have ${have[item.replace(/^minecraft:/, '')] ?? 0})`).join(', ');
-    lines.push(`DONE WHEN: inventory ${progress}`);
+  if (s.doneWhen) {
+    const parts: string[] = [];
+    if (s.doneWhen.inventory) parts.push(`inventory ${Object.entries(s.doneWhen.inventory).map(([item, expr]) => `${item} ${expr} (have ${have[item.replace(/^minecraft:/, '')] ?? 0})`).join(', ')}`);
+    if (s.doneWhen.blocks?.length) parts.push(`blocks ${s.doneWhen.blocks.map((b) => `${b.block} at ${b.x} ${b.y} ${b.z} (now ${bot.blockAt(bot.entity.position.floored().set(Math.floor(b.x), Math.floor(b.y), Math.floor(b.z)))?.name ?? 'unknown'})`).join(', ')}`);
+    if (s.doneWhen.near) parts.push(`within ${s.doneWhen.near.range} of ${s.doneWhen.near.x} ${s.doneWhen.near.y} ${s.doneWhen.near.z} (now ${bot.entity.position.distanceTo(bot.entity.position.clone().set(s.doneWhen.near.x, s.doneWhen.near.y, s.doneWhen.near.z)).toFixed(1)} away)`);
+    lines.push(`DONE WHEN: ${parts.join('; ')}`);
   } else {
     lines.push('DONE WHEN: not set yet; include "done_when" in this reply.');
   }
