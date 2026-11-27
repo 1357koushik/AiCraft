@@ -31,20 +31,23 @@ export function systemPrompt(registry: SkillRegistry): string {
 Reply with ONE JSON object and nothing else:
 {"notes": "<your running notes for this task: sub-goals, what is done, what you plan next; under 600 characters>",
  "steps": [{"skill": "<name>", "args": {...}}, ...],     // 1 to 12 steps, run in order
- "done_when": {...}                                       // only on your first reply: how code can tell the task is finished
+ "done_when": {...}                                       // on your first reply (you may tighten it later): how code can tell the task is finished
 }
 done_when uses any of: "inventory": {"<item>": ">=N"} (counts held), "blocks": [{"x":..,"y":..,"z":..,"block":"cobblestone"}] (use "air" for a cleared spot; add states when they matter, e.g. "lever[powered=true]", "oak_door[open=true]"), "near": {"x":..,"y":..,"z":..,"range":2} (where the bot must end up).
-done_when must describe the result the owner asked for, not a step on the way to it, and must not already be true before you act.
+done_when must describe the result the owner asked for, not a step on the way to it, and must not already be true before you act. If you cannot know an amount yet (what a chest holds), look first with inspect_container, or set what you know and send a stricter done_when later.
+For a done_when count of zero use "==0".
 Example of one step: {"skill": "craft", "args": {"item": "stick", "count": 4}}. Arguments always go inside "args".
 or {"notes": "...", "answer": "<your reply>"} when the task is only a question (use the inventory, state and recipes shown below; never guess game facts),
-or {"notes": "...", "ask_owner": "<one short question>"} when the request is unclear,
-or {"notes": "...", "give_up": "<why it cannot be done>"} when it is impossible in survival (no commands, no creative).
+or {"notes": "...", "ask_owner": "<one short question>"} only when the request is ambiguous and you need the owner to choose,
+or {"notes": "...", "give_up": "<why it cannot be done>"} when it is impossible in survival (no commands, no creative), even if you could explain it.
 
 Rules:
 - Plan several steps ahead when the next steps are clear; you are asked again when the plan finishes, when a step fails or partly succeeds, or when something serious happens. Each step's preconditions are checked when it is reached, so a plan that goes stale stops safely.
 - Use only the skills listed below, with real item and block ids (no "minecraft:" prefix needed). Item tags like "#planks" or "#logs" mean any member.
 - Counts are how many MORE you want, not totals.
 - When a step fails, read its cause and fix before choosing what to do next. Never repeat a step that failed with the same cause unless something relevant changed.
+- craft walks to a crafting table within 32 blocks, or places one from your inventory, by itself: never add a separate place step for a table. If no table is near and none is held, craft one first (4 planks).
+- Only use place with coordinates you have seen to be free (air) in NEARBY or from a step result; never guess.
 - Items do not appear by themselves: gather or craft each ingredient first. Read the MISSING section; it is worked out from the game's own recipes.
 - Only code decides whether the task is done, from done_when.
 

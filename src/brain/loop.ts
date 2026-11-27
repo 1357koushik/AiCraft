@@ -112,6 +112,9 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
   const failed = new Map<string, { cause: string; inv: string }>();
   let best = Number.POSITIVE_INFINITY;
   let stalled = 0;
+  // Whether the last plan changed anything: a step that gained or lost items, changed blocks, or moved the bot.
+  // Intermediate work (sticks, a table) does not shrink the goal's shortfall but is still progress.
+  let lastPlanProgressed = false;
 
   const finish = (outcome: BrainResult['outcome'], message: string): BrainResult => {
     Object.assign(result, { outcome, message, doneWhen: state.doneWhen, notes: state.notes });
@@ -126,8 +129,8 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
 
     // Progress is the shortfall against the done-condition; a decision that does not reduce it counts as a stall.
     const now = shortfall(o.bot, state.doneWhen);
-    if (now < best) {
-      best = now;
+    if (now < best || lastPlanProgressed) {
+      best = Math.min(best, now);
       stalled = 0;
     } else if (state.callsUsed > 0) {
       stalled++;
@@ -160,6 +163,17 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
     if (!parsed || !parsed.ok) return finish('llm_error', `No valid decision: ${parsed && !parsed.ok ? parsed.error : 'none'}.`);
     const d = parsed.decision;
     state.notes = d.notes;
+    // The LLM may tighten its done-condition once it learns more (e.g. how much a chest holds),
+    // but a new condition that is already true is refused, so it cannot be used to declare success.
+    if (d.done_when && state.doneWhen && JSON.stringify(d.done_when) !== JSON.stringify(state.doneWhen)) {
+      if (isDone(o.bot, d.done_when)) {
+        state.journal.push(`Kept done_when ${JSON.stringify(state.doneWhen)}; the proposed ${JSON.stringify(d.done_when)} is already true.`);
+      } else {
+        state.journal.push(`done_when changed from ${JSON.stringify(state.doneWhen)} to ${JSON.stringify(d.done_when)}.`);
+        o.log(`[brain] done_when updated to ${JSON.stringify(d.done_when)}`);
+        state.doneWhen = d.done_when;
+      }
+    }
     if (d.done_when && !state.doneWhen) {
       // A condition that is already true before any step has run cannot tell whether the task was done.
       if (result.steps.length === 0 && isDone(o.bot, d.done_when) && !d.answer && !d.give_up && !d.ask_owner) {
@@ -186,6 +200,7 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
     const first = parsed.plan!.steps[0];
     const prior = failed.get(stepKey(first.skill, first.args));
     if (prior && prior.inv === invKey) {
+      lastPlanProgressed = false;
       const line = `Refused to repeat ${stepKey(first.skill, first.args)}: it already failed (${prior.cause}) and nothing has changed since.`;
       state.journal.push(line);
       state.trigger = line;
@@ -195,6 +210,13 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
 
     o.log(`[brain] plan: ${parsed.plan!.steps.map((s) => stepKey(s.skill, s.args)).join(' -> ')}`);
     const run = await runPlan(parsed.plan!, o.registry, { bot: o.bot, signal: o.signal, log: o.log });
+    lastPlanProgressed = run.steps.some(
+      (r) =>
+        r.result.status !== 'failed' &&
+        (Object.keys(r.result.inventoryDelta).length > 0 ||
+          (r.result.worldDelta?.placed.length ?? 0) + (r.result.worldDelta?.broken.length ?? 0) > 0 ||
+          (r.result.distanceMoved ?? 0) > 2)
+    );
     result.steps.push(...run.steps);
     state.lastSteps = run.steps;
     for (const r of run.steps) {

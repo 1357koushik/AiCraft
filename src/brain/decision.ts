@@ -10,7 +10,10 @@ const Coord = z.number().finite();
 export const DoneWhenSchema = z
   .object({
     /** Item counts the bot must hold, e.g. { "stone_pickaxe": ">=1" }. */
-    inventory: z.record(z.string().regex(/^(>=|<=|==|=|>|<)?\s*\d+$/)).optional(),
+    // A bare number is accepted: 0 means "exactly none", any other number means "at least that many".
+    inventory: z
+      .record(z.union([z.string().regex(/^(>=|<=|==|=|>|<)?\s*\d+$/), z.number().int().min(0).transform((n) => (n === 0 ? '==0' : `>=${n}`))]))
+      .optional(),
     /** Blocks that must be at these spots ("air" for a cleared spot). */
     blocks: z.array(z.object({ x: Coord, y: Coord, z: Coord, block: z.string().min(1) }).strict()).max(256).optional(),
     /** The bot must be within `range` blocks of this point. */
@@ -73,7 +76,13 @@ function normalizeSteps(raw: unknown): unknown {
   const steps = (raw as any).steps.map((step: any) => {
     if (!step || typeof step !== 'object' || typeof step.skill !== 'string') return step;
     const { skill, args, ...rest } = step;
-    const merged = { ...(args && typeof args === 'object' ? args : {}), ...rest };
+    const merged: Record<string, unknown> = { ...(args && typeof args === 'object' ? args : {}), ...rest };
+    // A list of {name, count} pairs where a {name: count} map is meant: same information, other shape.
+    for (const [k, v] of Object.entries(merged)) {
+      if (Array.isArray(v) && v.length && v.every((e) => e && typeof e === 'object' && typeof e.name === 'string' && typeof e.count === 'number')) {
+        merged[k] = Object.fromEntries(v.map((e: any) => [e.name.replace(/^minecraft:/, ''), e.count]));
+      }
+    }
     return { skill, args: merged };
   });
   return { ...(raw as any), steps };

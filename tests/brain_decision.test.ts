@@ -69,3 +69,16 @@ describe('step normalisation', () => {
     }
   });
 });
+
+describe('lenient shapes the models send', () => {
+  it('turns a list of {name, count} into a map', () => {
+    const reg = buildRegistry([fake('store', z.object({ x: z.number(), y: z.number(), z: z.number(), items: z.record(z.number()) }))]);
+    const r = parseDecision('{"steps":[{"skill":"store","args":{"x":1,"y":2,"z":3,"items":[{"name":"minecraft:cobblestone","count":10}]}}]}', reg, items);
+    expect(r.ok && r.plan?.steps[0].args.items).toEqual({ cobblestone: 10 });
+  });
+  it('accepts numbers in done_when inventory: 0 means none, n means at least n', () => {
+    const r = parseDecision('{"steps":[{"skill":"craft","args":{"item":"x"}}],"done_when":{"inventory":{"cobblestone":0,"oak_log":4}}}', registry, items);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.decision.done_when?.inventory).toEqual({ cobblestone: '==0', oak_log: '>=4' });
+  });
+});
