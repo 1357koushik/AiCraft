@@ -65,6 +65,9 @@ export class OracleSession {
   private lastWorld: WorldEvidence | undefined;
   private lastOwnerSnapshot: PlayerSnapshot | null = null;
   private ownerDistances: OwnerDistanceSample[] = [];
+  private ownerBaselineStats: Record<string, number> = {};
+  private ownerDamageObjective: string | null = null;
+  private ownerDamageLive = 0;
 
   constructor(private readonly options: SessionOptions) {
     this.tailer = new LogTailer(options.logPath);
@@ -83,6 +86,11 @@ export class OracleSession {
     let index = 0;
     for (const key of Object.keys(expect.stats ?? {})) {
       this.statObjectives.set(key, await trackStat(rcon, index++, key));
+    }
+    const owner = this.options.owners[0];
+    if (owner && expect.ownerDamageTakenMax !== undefined) {
+      this.ownerBaselineStats = readStats(this.options.worldDir, offlinePlayerUuid(owner));
+      this.ownerDamageObjective = await trackStat(rcon, 90, 'custom:damage_taken');
     }
     this.startedAt = new Date();
     await rcon.command('function bot_oracle:mark {label:"t0"}');
@@ -158,9 +166,10 @@ export class OracleSession {
     return { items: snapshot.items, advancements: this.liveAdvancements, statDeltas, dimension: snapshot.dimension, deaths: this.deaths, world, pos: snapshot.pos, ...this.ownerEvidence() };
   }
 
-  private ownerEvidence(): Pick<Evidence, 'ownerItems' | 'ownerDistances'> {
+  private ownerEvidence(): Pick<Evidence, 'ownerItems' | 'ownerDistances' | 'ownerDamageTaken'> {
     if (!this.options.owners.length) return {};
-    return { ownerItems: this.lastOwnerSnapshot?.items, ownerDistances: this.ownerDistances };
+    const ownerDamageTaken = this.ownerDamageObjective ? this.ownerDamageLive / 10 : undefined;
+    return { ownerItems: this.lastOwnerSnapshot?.items, ownerDistances: this.ownerDistances, ownerDamageTaken };
   }
 
   /** One observation: snapshot, new log lines, and a live check of the expectations. */
@@ -177,6 +186,13 @@ export class OracleSession {
     }
     if (ownerNow) {
       if (ownerNow.online) this.lastOwnerSnapshot = ownerNow;
+      if (ownerNow.online && this.ownerDamageObjective) {
+        try {
+          this.ownerDamageLive = await readScore(rcon, owners[0], this.ownerDamageObjective);
+        } catch {
+          // keep the last reading
+        }
+      }
       const b = snapshot.pos;
       const o = ownerNow.pos;
       this.ownerDistances.push({ t: Date.now(), d: snapshot.online && ownerNow.online && b && o ? Math.hypot(b[0] - o[0], b[1] - o[1], b[2] - o[2]) : null });
@@ -230,6 +246,13 @@ export class OracleSession {
     } catch (err) {
       this.discrepancies.push(`World check failed: ${(err as Error).message}`);
     }
+    let ownerDamageTaken: number | undefined;
+    if (this.ownerDamageObjective) {
+      // The stats file is the final word (it is what the server persists); the live scoreboard must agree with it.
+      const fileDamage = (diffStats(this.ownerBaselineStats, readStats(worldDir, offlinePlayerUuid(this.options.owners[0])))['custom:damage_taken'] ?? 0);
+      if (fileDamage !== this.ownerDamageLive) this.discrepancies.push(`owner damage_taken: scoreboard says ${this.ownerDamageLive}, stats file says ${fileDamage} (tenths of a hit point)`);
+      ownerDamageTaken = fileDamage / 10;
+    }
     const evidence: Evidence = {
       world,
       pos: snapshot?.pos,
@@ -239,6 +262,7 @@ export class OracleSession {
       dimension: snapshot?.dimension,
       deaths: this.deaths,
       ...this.ownerEvidence(),
+      ...(ownerDamageTaken !== undefined ? { ownerDamageTaken } : {}),
     };
     const checks = evaluateExpectations(expect, evidence, { stats: 'world stats file', advancements: 'world advancements file' });
     const allOk = checks.length > 0 && checks.every((c) => c.ok);

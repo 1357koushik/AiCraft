@@ -88,7 +88,7 @@ export async function runJudged(
   validateExpectations(spec.expect);
   if (spec.owner) validateOwnerSpec(spec.owner);
   const ownerName = spec.owner ? spec.owner.name ?? DEFAULT_OWNER_NAME : undefined;
-  if (!ownerName && (spec.expect.ownerInventory || spec.expect.nearOwner)) throw new Error('ownerInventory and nearOwner need an "owner" block in the task.');
+  if (!ownerName && (spec.expect.ownerInventory || spec.expect.nearOwner || spec.expect.ownerDamageTakenMax !== undefined)) throw new Error('ownerInventory, nearOwner and ownerDamageTakenMax need an "owner" block in the task.');
 
   const runId = `${spec.kind}_${stampNow()}_${spec.id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40)}`;
   const runDir = path.resolve(logDir('runs', runId));

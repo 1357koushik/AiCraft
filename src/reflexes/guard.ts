@@ -14,7 +14,7 @@ import { ProgressWatchdog } from '../skills/contract.js';
  * Players are never attacked here. Fighting players happens only when a task calls for it.
  */
 
-const HOSTILE = new Set([
+export const HOSTILE = new Set([
   'zombie', 'husk', 'drowned', 'zombie_villager', 'skeleton', 'stray', 'bogged', 'spider', 'cave_spider', 'creeper', 'witch',
   'slime', 'magma_cube', 'phantom', 'pillager', 'vindicator', 'evoker', 'ravager', 'vex', 'silverfish', 'endermite', 'blaze',
   'wither_skeleton', 'guardian', 'elder_guardian', 'hoglin', 'zoglin', 'piglin_brute', 'breeze', 'ghast',
@@ -26,17 +26,50 @@ const BAD_FOOD = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'puf
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * Creeper fuse state. minecraft-data 1.21.6 lists the creeper's metadata keys in index order as the entity keys 0-7,
+ * living entity keys 8-14, mob_flags 15, then swell_dir 16, is_powered 17, is_ignited 18. swell_dir is -1 while idle
+ * and 1 while the fuse is running; is_ignited is true once lit with flint and steel or fire.
+ */
+const CREEPER_SWELL_DIR = 16;
+const CREEPER_IGNITED = 18;
+/** A creeper this close is an emergency even before its fuse is lit (its fuse starts inside about 3 blocks). */
+const CREEPER_DANGER_RANGE = 3;
+
+export function creeperFusing(e: Entity): boolean {
+  const m: any[] = ((e as any).metadata ?? []) as any[];
+  const v = (i: number) => (m[i] && typeof m[i] === 'object' && 'value' in m[i] ? m[i].value : m[i]);
+  return v(CREEPER_SWELL_DIR) === 1 || v(CREEPER_IGNITED) === true;
+}
+
+/** The creeper (or warden, ravager...) the bot must run from: a fuse is lit, or it is within the danger range. */
+function explosiveEmergency(bot: Bot): Entity | null {
+  let best: Entity | null = null;
+  let bestD = Infinity;
+  for (const e of Object.values(bot.entities)) {
+    if (e === bot.entity || !e.position || e.name !== 'creeper' || (e as any).isValid === false) continue;
+    const d = e.position.distanceTo(bot.entity.position);
+    if ((creeperFusing(e) && d < 12) || d < CREEPER_DANGER_RANGE) {
+      if (d < bestD) {
+        bestD = d;
+        best = e;
+      }
+    }
+  }
+  return best;
+}
+
 export interface ReflexEvent {
   reflex: string;
   detail: string;
 }
 
-function nearestThreat(bot: Bot, range: number): Entity | null {
+function nearestThreat(bot: Bot, range: number, skipCreepers = false): Entity | null {
   const me = bot.entity.position;
   let best: Entity | null = null;
   let bestD = range;
   for (const e of Object.values(bot.entities)) {
-    if (e === bot.entity || !e.position || !e.name || !HOSTILE.has(e.name)) continue;
+    if (e === bot.entity || !e.position || !e.name || !HOSTILE.has(e.name) || (skipCreepers && e.name === 'creeper')) continue;
     if ((e as any).isValid === false) continue;
     const d = e.position.distanceTo(me);
     if (d < bestD) {
@@ -81,7 +114,7 @@ async function moveAwayFrom(bot: Bot, from: Vec3, ms: number, shouldStop: () => 
   bot.clearControlStates();
 }
 
-async function bestWeaponInHand(bot: Bot): Promise<void> {
+export async function bestWeaponInHand(bot: Bot): Promise<void> {
   const weapon = WEAPONS.map((n) => bot.inventory.items().find((i) => i.name === n)).find(Boolean);
   if (!weapon || bot.heldItem?.name === weapon.name) return;
   // Don't wait on a craft in progress: fight with what is in hand instead.
@@ -262,10 +295,18 @@ export function installReflexGuard(bot: Bot, onEvent: (e: ReflexEvent) => void =
     }
 
     const threat = nearestThreat(bot, 8);
+    const fightThreat = nearestThreat(bot, 8, true);
     const recentAttacker = lastHurtBy && Date.now() - lastHurtAt < 3000 && lastHurtBy.isValid !== false ? lastHurtBy : null;
 
     // 3. Flee a creeper (or warden, ravager) that is close, or anything dangerous when health is low.
-    if (threat && FLEE_FROM.has(threat.name!) && threat.position.distanceTo(pos) < 7) {
+    // A creeper is an emergency when its fuse is lit or it is within 3 blocks; further off it is only a target (see the
+    // guard skill), so a walking creeper is not run from. Warden, ravager and elder guardian are still fled at 7.
+    const bomb = explosiveEmergency(bot);
+    if (bomb) {
+      void act('flee', async () => moveAwayFrom(bot, bomb.position, 4000, () => bomb.isValid === false || (!creeperFusing(bomb) && bomb.position.distanceTo(bot.entity.position) > 5) || bomb.position.distanceTo(bot.entity.position) > 12));
+      return;
+    }
+    if (threat && threat.name !== 'creeper' && FLEE_FROM.has(threat.name!) && threat.position.distanceTo(pos) < 7) {
       void act('flee', async () => moveAwayFrom(bot, threat.position, 4000, () => threat.isValid === false || threat.position.distanceTo(bot.entity.position) > 12));
       return;
     }
@@ -276,7 +317,7 @@ export function installReflexGuard(bot: Bot, onEvent: (e: ReflexEvent) => void =
     }
 
     // 4. Fight a hostile mob that is close, or whatever just hit us.
-    const fightTarget = recentAttacker && recentAttacker.position.distanceTo(pos) < 6 ? recentAttacker : threat && threat.position.distanceTo(pos) < 4.5 ? threat : null;
+    const fightTarget = recentAttacker && recentAttacker.name !== 'creeper' && recentAttacker.position.distanceTo(pos) < 6 ? recentAttacker : fightThreat && fightThreat.position.distanceTo(pos) < 4.5 ? fightThreat : null;
     if (fightTarget) {
       void act('fight', async () => fight(bot, fightTarget, onEvent));
       return;

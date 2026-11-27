@@ -18,10 +18,12 @@ export const DoneWhenSchema = z
     blocks: z.array(z.object({ x: Coord, y: Coord, z: Coord, block: z.string().min(1) }).strict()).max(256).optional(),
     /** The bot must be within `range` blocks of this point. */
     near: z.object({ x: Coord, y: Coord, z: Coord, range: z.number().positive().max(64).default(2) }).strict().optional(),
+    /** A timed duty that changes nothing measurable ("guard me for a minute"): done when the plan has run to its end. Needs a step with `minutes`. */
+    after_plan: z.literal(true).optional(),
   })
   .strict()
-  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near), {
-    message: 'done_when needs at least one of inventory, blocks or near',
+  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true, {
+    message: 'done_when needs at least one of inventory, blocks, near or after_plan',
   });
 export type DoneWhen = z.infer<typeof DoneWhenSchema>;
 

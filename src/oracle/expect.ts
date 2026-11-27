@@ -30,6 +30,12 @@ export interface TaskExpectations {
    * made during the measured window. With `lastSeconds`, only the polls of the final that-many seconds count.
    */
   nearOwner?: { range: number; minFraction?: number; lastSeconds?: number };
+  /**
+   * Most damage the owner may take during the measured window, in hit points (2 = one heart). Read from the owner's
+   * `minecraft:custom` `minecraft:damage_taken` stat, which the server counts in tenths of a hit point (a zombie
+   * hit of 3 hp adds 30), so the raw value is divided by 10 here. Needs a task owner.
+   */
+  ownerDamageTakenMax?: number;
 }
 
 /** One poll's distance between the bot and the owner (null when either was offline or had no position). */
@@ -59,6 +65,8 @@ export interface Evidence {
   ownerItems?: Record<string, number>;
   /** Bot-to-owner distances from every poll of the measured window. */
   ownerDistances?: OwnerDistanceSample[];
+  /** Damage the owner took during the measured window, in hit points (the stat's raw value / 10). */
+  ownerDamageTaken?: number;
 }
 
 export interface CheckResult {
@@ -110,6 +118,9 @@ export function validateExpectations(expect: TaskExpectations): void {
     if (n.minFraction !== undefined && !(typeof n.minFraction === 'number' && n.minFraction >= 0 && n.minFraction <= 1)) throw new Error('nearOwner.minFraction must be between 0 and 1');
     if (n.lastSeconds !== undefined && !(typeof n.lastSeconds === 'number' && n.lastSeconds > 0)) throw new Error('nearOwner.lastSeconds must be a positive number');
   }
+  if (expect.ownerDamageTakenMax !== undefined && !(typeof expect.ownerDamageTakenMax === 'number' && expect.ownerDamageTakenMax >= 0)) {
+    throw new Error(`ownerDamageTakenMax must be a number of hit points >= 0, got ${JSON.stringify(expect.ownerDamageTakenMax)}`);
+  }
   const isNum = (n: unknown) => typeof n === 'number' && Number.isFinite(n);
   for (const b of expect.blocks ?? []) {
     if (![b.x, b.y, b.z].every(isNum) || typeof b.block !== 'string' || !b.block) throw new Error(`Invalid block expectation ${JSON.stringify(b)}`);
@@ -140,6 +151,7 @@ export function hasExpectations(expect: TaskExpectations | undefined): boolean {
       expect.near ||
       Object.keys(expect.ownerInventory ?? {}).length ||
       expect.nearOwner ||
+      expect.ownerDamageTakenMax !== undefined ||
       hasWorldExpectations(expect)
   );
 }
@@ -236,6 +248,16 @@ export function evaluateExpectations(expect: TaskExpectations, evidence: Evidenc
       actual: samples.length ? `${Math.round(fraction * 100)}% of ${samples.length} polls (farthest ${worst.toFixed(1)})` : 'no polls',
       ok: samples.length > 0 && fraction >= minFraction,
       source: 'RCON data get entity Pos, both players, every poll',
+    });
+  }
+  if (expect.ownerDamageTakenMax !== undefined) {
+    const known = evidence.ownerDamageTaken !== undefined;
+    results.push({
+      check: 'owner damage taken (hit points)',
+      expected: `<=${expect.ownerDamageTakenMax}`,
+      actual: known ? String(evidence.ownerDamageTaken) : 'unknown',
+      ok: known && evidence.ownerDamageTaken! <= expect.ownerDamageTakenMax,
+      source: 'owner damage_taken stat / 10',
     });
   }
   if (expect.maxDeaths !== undefined) {

@@ -196,6 +196,13 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
       continue;
     }
     if (isDone(o.bot, state.doneWhen)) continue;
+    // after_plan is only for a timed duty: without a step that has `minutes`, the plan's end proves nothing.
+    if (state.doneWhen.after_plan && !parsed.plan!.steps.some((s) => typeof (s.args as any)?.minutes === 'number')) {
+      state.doneWhen = undefined;
+      state.trigger = 'done_when after_plan is only for a timed duty (a step with "minutes"). Describe the end state instead.';
+      o.log('[brain] rejected after_plan: no timed step');
+      continue;
+    }
 
     // Loop-breaker: refuse a first step that already failed with nothing relevant changed.
     const invKey = JSON.stringify(inventory(o.bot));
@@ -227,6 +234,7 @@ export async function runBrain(o: BrainOptions): Promise<BrainResult> {
         state.journal.push(`${stepKey(r.step.skill, r.step.args)} -> ${r.result.status} (${r.result.cause}): ${r.result.message}`);
       }
     }
+    if (run.outcome === 'completed' && state.doneWhen?.after_plan) return finish('done', 'The timed duty ran to its end.');
     state.trigger =
       run.outcome === 'completed'
         ? 'Your plan finished. Check DONE WHEN and decide what is left.'

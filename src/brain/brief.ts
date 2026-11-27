@@ -36,7 +36,7 @@ Reply with ONE JSON object and nothing else:
  "steps": [{"skill": "<name>", "args": {...}}, ...],     // 1 to 12 steps, run in order
  "done_when": {...}                                       // on your first reply (you may tighten it later): how code can tell the task is finished
 }
-done_when uses any of: "inventory": {"<item>": ">=N"} (counts held), "blocks": [{"x":..,"y":..,"z":..,"block":"cobblestone"}] (use "air" for a cleared spot; add states when they matter, e.g. "lever[powered=true]", "oak_door[open=true]"), "near": {"x":..,"y":..,"z":..,"range":2} (where the bot must end up).
+done_when uses any of: "inventory": {"<item>": ">=N"} (counts held), "blocks": [{"x":..,"y":..,"z":..,"block":"cobblestone"}] (use "air" for a cleared spot; add states when they matter, e.g. "lever[powered=true]", "oak_door[open=true]"), "near": {"x":..,"y":..,"z":..,"range":2} (where the bot must end up), "after_plan": true (only for a timed duty such as "guard me for a minute" or "follow me for 2 minutes", where nothing measurable changes: done when your plan has run to its end; the plan must contain a step with "minutes").
 done_when must describe the result the owner asked for, not a step on the way to it, and must not already be true before you act. If you cannot know an amount yet (what a chest holds), look first with inspect_container, or set what you know and send a stricter done_when later.
 For a done_when count of zero use "==0".
 Example of one step: {"skill": "craft", "args": {"item": "stick", "count": 4}}. Arguments always go inside "args".

@@ -1,0 +1,66 @@
+{
+  "id": "guard_me",
+  "text": "protect me from the zombies for the next minute",
+  "timeoutSec": 170,
+  "callBudget": 8,
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      97.5,
+      121,
+      115.5
+    ],
+    "script": [
+      {
+        "say": "protect me from the zombies for the next minute"
+      },
+      {
+        "wait": 85
+      }
+    ]
+  },
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "gamerule doWeatherCycle false",
+    "time set midnight",
+    "forceload add 80 80 150 135",
+    "tp dragonai 96.5 121 114.5",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 94 121 112 100 123 118 stone",
+    "fill 95 121 113 99 123 117 air",
+    "fill 100 121 115 100 122 115 air",
+    "fill 124 121 113 128 123 117 stone",
+    "fill 125 121 114 127 122 116 air",
+    "setblock 124 121 115 iron_door[facing=west,half=lower,hinge=left,open=false,powered=false]",
+    "setblock 124 122 115 iron_door[facing=west,half=upper,hinge=left,open=false,powered=false]",
+    "fill 101 121 122 121 121 122 repeater[delay=4,facing=west]",
+    "setblock 122 121 122 stone",
+    "fill 122 121 121 122 121 115 repeater[delay=4,facing=south]",
+    "setblock 122 121 114 stone",
+    "setblock 123 121 114 repeater[delay=4,facing=west]",
+    "summon zombie 125.5 121 114.5 {PersistenceRequired:1b}",
+    "summon zombie 126.5 121 115.5 {PersistenceRequired:1b}",
+    "summon zombie 125.5 121 116.5 {PersistenceRequired:1b}",
+    "setblock 100 121 122 redstone_block",
+    "tp OwnerPlayer 97.5 121 115.5",
+    "tp dragonai 96.5 121 114.5",
+    "give dragonai iron_sword 1",
+    "give dragonai iron_helmet 1",
+    "give dragonai iron_chestplate 1",
+    "give dragonai iron_leggings 1",
+    "give dragonai iron_boots 1",
+    "give dragonai bread 3"
+  ],
+  "expect": {
+    "stats": {
+      "killed:zombie": ">=2"
+    },
+    "ownerDamageTakenMax": 4,
+    "maxDeaths": 0
+  },
+  "seed": "20261109"
+}

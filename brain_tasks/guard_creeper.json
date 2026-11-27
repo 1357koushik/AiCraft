@@ -1,0 +1,136 @@
+{
+  "id": "guard_creeper",
+  "text": "guard me against the creeper for the next minute",
+  "timeoutSec": 170,
+  "callBudget": 8,
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      97.5,
+      121,
+      115.5
+    ],
+    "script": [
+      {
+        "say": "guard me against the creeper for the next minute"
+      },
+      {
+        "wait": 85
+      }
+    ]
+  },
+  "setup": [
+    "gamerule doMobSpawning false",
+    "gamerule doDaylightCycle false",
+    "gamerule doWeatherCycle false",
+    "time set midnight",
+    "forceload add 80 80 150 135",
+    "tp dragonai 96.5 121 114.5",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 94 121 112 100 123 118 stone",
+    "fill 95 121 113 99 123 117 air",
+    "fill 100 121 115 100 122 115 air",
+    "fill 112 121 113 116 123 117 stone",
+    "fill 113 121 114 115 122 116 air",
+    "setblock 112 121 115 iron_door[facing=west,half=lower,hinge=left,open=false,powered=false]",
+    "setblock 112 122 115 iron_door[facing=west,half=upper,hinge=left,open=false,powered=false]",
+    "fill 92 121 122 109 121 122 repeater[delay=4,facing=west]",
+    "setblock 110 121 122 stone",
+    "fill 110 121 121 110 121 115 repeater[delay=4,facing=south]",
+    "setblock 110 121 114 stone",
+    "setblock 111 121 114 repeater[delay=4,facing=west]",
+    "summon creeper 113.5 121 115.5 {PersistenceRequired:1b}",
+    "setblock 91 121 122 redstone_block",
+    "tp OwnerPlayer 97.5 121 115.5",
+    "tp dragonai 96.5 121 114.5",
+    "give dragonai iron_sword 1",
+    "give dragonai iron_helmet 1",
+    "give dragonai iron_chestplate 1",
+    "give dragonai iron_leggings 1",
+    "give dragonai iron_boots 1",
+    "give dragonai bread 3"
+  ],
+  "expect": {
+    "stats": {
+      "killed:creeper": ">=1"
+    },
+    "ownerDamageTakenMax": 0,
+    "maxDeaths": 0,
+    "regions": [
+      {
+        "from": [
+          100,
+          121,
+          112
+        ],
+        "to": [
+          100,
+          123,
+          114
+        ],
+        "block": "stone",
+        "mode": "all"
+      },
+      {
+        "from": [
+          100,
+          121,
+          116
+        ],
+        "to": [
+          100,
+          123,
+          118
+        ],
+        "block": "stone",
+        "mode": "all"
+      },
+      {
+        "from": [
+          100,
+          123,
+          115
+        ],
+        "to": [
+          100,
+          123,
+          115
+        ],
+        "block": "stone",
+        "mode": "all"
+      },
+      {
+        "from": [
+          94,
+          121,
+          112
+        ],
+        "to": [
+          94,
+          123,
+          118
+        ],
+        "block": "stone",
+        "mode": "all"
+      },
+      {
+        "from": [
+          95,
+          120,
+          113
+        ],
+        "to": [
+          99,
+          120,
+          117
+        ],
+        "block": "stone",
+        "mode": "all"
+      }
+    ]
+  },
+  "seed": "20261109"
+}

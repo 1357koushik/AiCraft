@@ -38,4 +38,13 @@ describe('owner expectations', () => {
     expect(() => validateOwnerSpec({ script: [{ jump: true } as any] })).toThrow();
     expect(() => validateOwnerSpec({ script: [{ walk: [1, 2] } as any] })).toThrow();
   });
+  it('judges ownerDamageTakenMax in hit points, and fails when it is unknown', () => {
+    const e = { ownerDamageTakenMax: 2 };
+    expect(hasExpectations(e)).toBe(true);
+    expect(evaluateExpectations(e, { ...base, ownerDamageTaken: 0 }, sources)[0].ok).toBe(true);
+    expect(evaluateExpectations(e, { ...base, ownerDamageTaken: 2 }, sources)[0].ok).toBe(true);
+    expect(evaluateExpectations(e, { ...base, ownerDamageTaken: 2.1 }, sources)[0].ok).toBe(false);
+    expect(evaluateExpectations(e, base, sources)[0].ok).toBe(false);
+    expect(() => validateExpectations({ ownerDamageTakenMax: -1 })).toThrow();
+  });
 });
