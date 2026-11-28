@@ -377,7 +377,7 @@ export class Companion {
       case 'orders': {
         const list = this.orders.filter((o) => o.status !== 'cancelled');
         if (!list.length) return this.say('No standing orders.');
-        return this.say(list.map((o, i) => `${i + 1}. ${o.text} (${o.status === 'suspended' ? 'stopped after failing' : `ran ${o.runs}x`})`).join(' | '));
+        return this.say(list.map((o, i) => `${i + 1}. ${o.text} (${o.status === 'suspended' ? 'stopped after failing' : o.untilStopped ? 'whenever free' : `ran ${o.runs}x`})`).join(' | '));
       }
     }
   }

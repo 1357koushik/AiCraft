@@ -84,6 +84,34 @@ export function loadCompanionSpec(filePath: string): CompanionSpec {
   return spec;
 }
 
+/**
+ * What the bot said in chat during the run, from the judge's timeline of the server log (every line it tailed, also
+ * across the log rotation at midnight), falling back to the copied server.log.
+ */
+export function botChat(runDir: string, botName: string): string[] {
+  const timeline = path.join(runDir, 'timeline.ndjson');
+  if (fs.existsSync(timeline)) {
+    const out: string[] = [];
+    for (const line of fs.readFileSync(timeline, 'utf8').split(/\r?\n/)) {
+      if (!line.includes('"chat"')) continue;
+      try {
+        const e = JSON.parse(line);
+        if (e.kind === 'log' && e.entry?.kind === 'chat' && e.entry.player === botName) out.push(String(e.entry.message));
+      } catch {
+        // a torn last line
+      }
+    }
+    if (out.length) return out;
+  }
+  const logPath = path.join(runDir, 'server.log');
+  if (!fs.existsSync(logPath)) return [];
+  return fs
+    .readFileSync(logPath, 'utf8')
+    .split(/\r?\n/)
+    .map((l) => l.match(new RegExp(`<${botName}> (.*)$`))?.[1])
+    .filter((x): x is string => Boolean(x));
+}
+
 export interface CompanionRunOutput {
   runId: string;
   runDir: string;
@@ -147,14 +175,7 @@ export async function runCompanionSpec(
   // Checks the server cannot do on its own: what the bot said (from the server's log), and how each task ended.
   const checks: Verdict['checks'] = [];
   if (spec.expectBotSaid?.length) {
-    const logPath = path.join(out.runDir, 'server.log');
-    const said = fs.existsSync(logPath)
-      ? fs
-          .readFileSync(logPath, 'utf8')
-          .split(/\r?\n/)
-          .map((l) => l.match(new RegExp(`<${botName}> (.*)$`))?.[1])
-          .filter((x): x is string => Boolean(x))
-      : [];
+    const said = botChat(out.runDir, botName);
     for (const pattern of spec.expectBotSaid) {
       const re = new RegExp(pattern, 'i');
       const hit = said.find((s) => re.test(s));

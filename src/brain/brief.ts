@@ -106,7 +106,9 @@ function nearby(bot: Bot): string[] {
     const nearest = found[0];
     const d = nearest.distanceTo(me);
     const dy = Math.round(nearest.y - me.y);
-    out.push(`${kind.label}: ${found.length >= 64 ? '64+' : found.length} within 32, nearest ${d.toFixed(0)} blocks ${direction(nearest.x - me.x, nearest.z - me.z)}${dy ? `, ${dy > 0 ? `${dy} up` : `${-dy} down`}` : ''}`);
+    // Exact spots, so a step can name them (a chest's coordinates were guessed wrong without this); a few for chests.
+    const at = found.slice(0, kind.label === 'chest' ? 3 : 1).map((p) => `${p.x} ${p.y} ${p.z}`).join('; ');
+    out.push(`${kind.label}: ${found.length >= 64 ? '64+' : found.length} within 32, nearest ${d.toFixed(0)} blocks ${direction(nearest.x - me.x, nearest.z - me.z)}${dy ? `, ${dy > 0 ? `${dy} up` : `${-dy} down`}` : ''} at ${at}`);
   }
   const mobs: Record<string, number> = {};
   for (const e of Object.values(bot.entities)) {
