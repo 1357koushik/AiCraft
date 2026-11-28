@@ -31,12 +31,14 @@ async function main(): Promise<void> {
   setActivePlaces(places);
 
   const attach = async (bot: Bot) => {
-    // A reconnect gives a new bot object: restart the reflexes and the companion on it.
+    // A reconnect gives a new bot object: restart the reflexes on it, and move the companion over with its queue,
+    // standing orders and history intact.
     stopReflexes?.();
     stopPlaces?.();
-    await companion?.shutdown();
     stopPlaces = startPlacesScan(bot, places, { log });
     stopReflexes = installReflexGuard(bot, (e) => log(`[reflex] ${e.reflex}: ${e.detail}`));
+    bot.once('end', () => companion?.detach());
+    if (companion) return companion.rebind(bot);
     companion = new Companion({ bot, owners, registry, llm, requirements: { missingFor, craftableNow }, log });
     companion.start();
     log(`[companion] ready; listening to ${owners.join(', ') || 'no owners (set agent.owners in config.yaml)'} using ${llm.model}`);

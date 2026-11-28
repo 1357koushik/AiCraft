@@ -38,7 +38,16 @@ export interface TaskItem {
   calls?: number;
   /** Set when the task became a standing order. */
   orderId?: number;
+  /** Not started again before this time (a retry after the LLM could not be reached). */
+  notBefore?: number;
+  llmRetries?: number;
+  /** Cut off by a disconnect: run again from the start once the bot is back. */
+  requeue?: boolean;
 }
+
+/** Retries, with growing waits, for a task whose LLM could not be reached. */
+const LLM_RETRIES = 3;
+const LLM_RETRY_MS = 30000;
 
 export interface StandingOrder {
   id: number;
@@ -158,7 +167,9 @@ export class Companion {
   private lastHungerAt = 0;
   private wake: (() => void) | null = null;
   private readonly onChat = (username: string, message: string) => this.handleChat(username, message);
-  private readonly deaths: DeathWatch;
+  private deaths: DeathWatch;
+  /** Between a disconnect and the next bot: nothing runs. */
+  private offline = false;
   private readonly onRespawn = (rec: DeathRecord) => this.reportDeath(rec);
   private worker: Promise<void> | null = null;
 
@@ -170,6 +181,34 @@ export class Companion {
     this.o.bot.on('chat', this.onChat);
     this.deaths.on('respawn', this.onRespawn);
     this.worker = this.loop();
+  }
+
+  /**
+   * The connection dropped: stop what is running (a task goes back to the front of the queue) and wait for rebind.
+   * The queue, standing orders and history are kept.
+   */
+  detach(): void {
+    if (this.offline) return;
+    this.offline = true;
+    this.o.bot.off('chat', this.onChat);
+    this.deaths.off('respawn', this.onRespawn);
+    const cur = this.current;
+    if (cur?.kind === 'task') cur.item.requeue = true;
+    if (cur?.kind === 'standing') cur.preempted = true;
+    cur?.abort.abort(new Error('disconnected'));
+    this.o.log('[companion] disconnected; waiting for the bot to come back');
+  }
+
+  /** Carries on with a new bot after a reconnect, keeping the queue, standing orders and history. */
+  rebind(bot: Bot): void {
+    this.detach();
+    this.o.bot = bot;
+    this.deaths = watchDeaths(bot);
+    bot.on('chat', this.onChat);
+    this.deaths.on('respawn', this.onRespawn);
+    this.offline = false;
+    this.o.log('[companion] reconnected; carrying on');
+    this.wake?.();
   }
 
   /** Stops taking tasks, cancels the running one, and waits for the worker to finish. */
@@ -348,6 +387,10 @@ export class Companion {
 
   private async loop(): Promise<void> {
     while (!this.stopped) {
+      if (this.offline) {
+        await new Promise((r) => setTimeout(r, 500));
+        continue;
+      }
       // Dead, or just respawned and the slots not read yet: wait, so nothing starts before recovery can.
       const last = this.deaths.last;
       if (last && !last.recoveryTried && !last.itemsAfterRespawn && Date.now() - last.at < 30000) {
@@ -359,7 +402,7 @@ export class Companion {
         await this.recover(pendingDeath);
         continue;
       }
-      const next = this.queue.find((t) => t.status === 'queued');
+      const next = this.queue.find((t) => t.status === 'queued' && !(t.notBefore && t.notBefore > Date.now()));
       if (next) {
         this.queue.splice(this.queue.indexOf(next), 1);
         await this.runTask(next);
@@ -456,18 +499,17 @@ export class Companion {
     }
   }
 
-  private dueOrder(): StandingOrder | null {
+  /** The order to run now. Scheduled ones (every N minutes, each night) come before one that runs until stopped. */
+  private dueOrder(scheduledOnly = false): StandingOrder | null {
     const now = Date.now();
     const time: any = (this.o.bot as any).time ?? {};
-    for (const order of this.activeOrders) {
-      if (order.nextAt > now) continue;
-      if (order.when) {
-        const key = periodKey(order.when, Number(time.timeOfDay ?? 0), Number(time.day ?? 0));
-        if (!key || key === order.lastKey) continue;
-      }
-      return order;
-    }
-    return null;
+    const due = this.activeOrders.filter((order) => {
+      if (order.nextAt > now || (scheduledOnly && order.untilStopped)) return false;
+      if (!order.when) return true;
+      const key = periodKey(order.when, Number(time.timeOfDay ?? 0), Number(time.day ?? 0));
+      return Boolean(key) && key !== order.lastKey;
+    });
+    return due.find((o) => !o.untilStopped) ?? due[0] ?? null;
   }
 
   private async runOrder(order: StandingOrder): Promise<void> {
@@ -482,6 +524,15 @@ export class Companion {
       abort.abort(new Error('the bot died'));
     };
     this.deaths.on('death', onDeath);
+    // An order that never ends by itself makes way when a scheduled one comes due, and picks up again after it.
+    const yieldTimer = order.untilStopped
+      ? setInterval(() => {
+          if (this.dueOrder(true)) {
+            cur.preempted = true;
+            abort.abort(new Error('a scheduled standing order is due'));
+          }
+        }, 1000)
+      : null;
     this.o.record?.({ kind: 'order_run', id: order.id, run: order.runs + 1 });
     this.o.log(`[companion] standing order #${order.id} run ${order.runs + 1}: ${order.text}`);
     let run;
@@ -497,6 +548,7 @@ export class Companion {
       });
     } finally {
       this.deaths.off('death', onDeath);
+      if (yieldTimer) clearInterval(yieldTimer);
       this.current = null;
     }
     const now = Date.now();
@@ -514,6 +566,13 @@ export class Companion {
       if (key) order.lastKey = key;
       // A plan meant to run until stopped that ended anyway (the player went out of sight) is retried shortly.
       order.nextAt = now + (order.everyMs ?? (order.untilStopped ? 10000 : 60000));
+      return;
+    }
+    // A guard or follow order whose player is out of sight is waiting, not broken: no repair, try again soon.
+    const failedStep = run.steps.find((r) => r.result.status !== 'done');
+    if (order.untilStopped && failedStep?.result.cause === 'not_found_nearby') {
+      order.lastMessage = run.message;
+      order.nextAt = now + 30000;
       return;
     }
     order.failuresInRow++;
@@ -544,7 +603,7 @@ export class Companion {
         callBudget: Math.min(this.o.callBudget ?? 4, 4),
         record: this.o.record,
         log: this.o.log,
-        trigger: `This is a standing order you already accepted. Its plan was ${JSON.stringify(order.plan.steps)}, and the last run failed: ${failure} Send a corrected plan with "standing" set again (code will keep running it), or one-off steps that fix the cause.`,
+        trigger: `This is a standing order you already accepted. Its plan was ${JSON.stringify(order.plan.steps)}, and the last run failed: ${failure} Send a corrected plan with "standing" set again (code will keep running it), or one-off steps that fix the cause. Keep to this order's own duty: do not gather, craft or build things it does not need. If the failure only means there was nothing to do this time, send the same plan again.`,
       });
       if (r.outcome === 'standing' && r.standing) {
         order.plan = r.standing.plan;
@@ -620,6 +679,24 @@ export class Companion {
     item.calls = result?.calls;
     // The status may have been changed by a control command (stop, pause) while the brain ran.
     const status = item.status as TaskStatus;
+    if (item.requeue && status !== 'cancelled') {
+      item.requeue = false;
+      item.status = 'queued';
+      this.queue.unshift(item);
+      this.o.record?.({ kind: 'task_requeued', id: item.id, why: 'disconnected' });
+      return;
+    }
+    if (result?.outcome === 'llm_error' && status !== 'cancelled' && status !== 'paused' && (item.llmRetries ?? 0) < LLM_RETRIES) {
+      // An LLM outage should not lose the owner's task: wait and try again from the start.
+      item.llmRetries = (item.llmRetries ?? 0) + 1;
+      const wait = LLM_RETRY_MS * item.llmRetries;
+      item.notBefore = Date.now() + wait;
+      item.status = 'queued';
+      this.queue.unshift(item);
+      this.say(`I can't reach my LLM right now; I'll try "${item.text}" again in ${Math.round(wait / 1000)} s.`);
+      this.o.record?.({ kind: 'task_retry', id: item.id, attempt: item.llmRetries, message: result.message });
+      return;
+    }
     if (status === 'paused') {
       // Keep it for "resume", ahead of anything queued later.
       this.queue.unshift(item);

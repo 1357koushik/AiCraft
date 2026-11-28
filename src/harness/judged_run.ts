@@ -37,6 +37,8 @@ export interface JudgedSpec {
    * bot; each is logged in the run.
    */
   events?: WorldEvent[];
+  /** When the bot is disconnected (kicked, timed out) during the measured window, connect it again, as a real server connection would. */
+  reconnect?: boolean;
 }
 
 export interface WorldEvent {
@@ -51,7 +53,7 @@ export function validateEvents(events: unknown): WorldEvent[] {
   return events.map((e, i) => {
     const at = (e as any)?.at;
     const command = (e as any)?.command;
-    if (typeof at !== 'number' || !Number.isFinite(at) || at < 0 || at > 3600) throw new Error(`events[${i}].at must be seconds between 0 and 3600`);
+    if (typeof at !== 'number' || !Number.isFinite(at) || at < 0 || at > 86400) throw new Error(`events[${i}].at must be seconds between 0 and 86400`);
     if (typeof command !== 'string' || !command.trim() || command.startsWith('/')) throw new Error(`events[${i}].command must be a server command without the leading slash`);
     if (Object.keys(e as object).length !== 2) throw new Error(`events[${i}] must have exactly "at" and "command"`);
     return { at, command: command.trim() };
@@ -63,6 +65,8 @@ export interface BodyContext {
   signal: AbortSignal;
   log: (line: string) => void;
   runDir: string;
+  /** With `reconnect`: called with the new bot after each reconnect (and with null when the old one drops). */
+  onBotChange?: (fn: (bot: Bot | null) => void) => void;
 }
 
 export interface BodyOutput {
@@ -139,8 +143,8 @@ export async function runJudged(
   let owner: OwnerSim | null = null;
   let verdict: Verdict;
   let summary = '';
-  let stopReflexes: (() => void) | null = null;
-  let stopPlaces: (() => void) | null = null;
+  let stopReflexes = null as (() => void) | null;
+  let stopPlaces = null as (() => void) | null;
   try {
     running = await server.start(world, { stdoutPath: path.join(runDir, 'server-stdout.log') });
     if (process.env.AICRAFT_PACKET_TRACE !== '0') process.env.AICRAFT_PACKET_TRACE = '1';
@@ -156,12 +160,15 @@ export async function runJudged(
     }
     await bot.waitForTicks(40);
     // Reflexes run for the whole measured part: fight, flee, eat, escape lava and drowning, then let the skill resume.
-    const reflexBot = bot;
-    stopReflexes = installReflexGuard(reflexBot, (e) => runLog(`[reflex] ${e.reflex}: ${e.detail}`));
     // The death log starts now, so a death during setup or the run is known with what the bot carried.
-    const deathWatch = watchDeaths(reflexBot);
-    deathWatch.on('death', (d) => runLog(`[death] at ${d.pos.x} ${d.pos.y} ${d.pos.z} holding ${Object.keys(d.items).length} kinds of item`));
-    deathWatch.on('respawn', (d) => runLog(`[death] respawned at ${d.respawnAt ? `${d.respawnAt.x} ${d.respawnAt.y} ${d.respawnAt.z}` : '?'}${d.cause ? `; cause: ${d.cause}` : ''}`));
+    const watchBody = (nb: Bot) => {
+      stopReflexes = installReflexGuard(nb, (e) => runLog(`[reflex] ${e.reflex}: ${e.detail}`));
+      const deathWatch = watchDeaths(nb);
+      deathWatch.on('death', (d) => runLog(`[death] at ${d.pos.x} ${d.pos.y} ${d.pos.z} holding ${Object.keys(d.items).length} kinds of item`));
+      deathWatch.on('respawn', (d) => runLog(`[death] respawned at ${d.respawnAt ? `${d.respawnAt.x} ${d.respawnAt.y} ${d.respawnAt.z}` : '?'}${d.cause ? `; cause: ${d.cause}` : ''}`));
+    };
+    const reflexBot = bot;
+    watchBody(reflexBot);
 
     for (const cmd of spec.setup ?? []) {
       const out = await running.rcon.command(cmd);
@@ -192,6 +199,40 @@ export async function runJudged(
 
     const abort = new AbortController();
     const deadline = setTimeout(() => abort.abort(new Error('time limit')), spec.timeoutSec * 1000);
+
+    // Reconnect: a dropped bot is connected again with everything that watches it, and the body is told.
+    const botListeners: Array<(b: Bot | null) => void> = [];
+    let reconnects = 0;
+    const onEnd = (old: Bot) =>
+      old.once('end', (reason: string) => {
+        // polling is false once the body has finished: the run is ending, not dropping.
+        if (!spec.reconnect || abort.signal.aborted || !polling || bot !== old) return;
+        runLog(`[connection] the bot was disconnected (${reason}); reconnecting`);
+        stopReflexes?.();
+        stopPlaces?.();
+        stopWatchingDeaths(old);
+        for (const fn of botListeners) fn(null);
+        void (async () => {
+          for (let attempt = 1; attempt <= 6 && !abort.signal.aborted; attempt++) {
+            await new Promise((r) => setTimeout(r, 5000));
+            try {
+              const nb = await connectBot(server.port, botName);
+              bot = nb;
+              reconnects++;
+              installPacketTrace(nb, path.join(runDir, `packets-${reconnects}.ndjson`));
+              watchBody(nb);
+              stopPlaces = startPlacesScan(nb, places, { log: runLog });
+              runLog(`[connection] reconnected (attempt ${attempt})`);
+              onEnd(nb);
+              for (const fn of botListeners) fn(nb);
+              return;
+            } catch (err) {
+              runLog(`[connection] reconnect attempt ${attempt} failed: ${(err as Error).message}`);
+            }
+          }
+        })();
+      });
+    onEnd(bot);
     const eventTimers = validateEvents(spec.events).map((ev) =>
       setTimeout(() => {
         session.declareEvent(ev.command);
@@ -215,11 +256,12 @@ export async function runJudged(
 
     const b = bot;
     let out: BodyOutput;
+    const onBotChange = (fn: (nb: Bot | null) => void) => botListeners.push(fn);
     // The owner's script runs alongside the body. It is waited for afterwards, so a bot that stops early (for
     // example one that quits following) is still judged over the whole script.
     const ownerRun = owner && spec.owner?.script?.length ? owner.run(spec.owner.script, abort.signal, runLog) : Promise.resolve();
     try {
-      out = await body({ bot: b, signal: abort.signal, log: runLog, runDir });
+      out = await body({ bot: b, signal: abort.signal, log: runLog, runDir, onBotChange });
       await ownerRun;
     } finally {
       clearTimeout(deadline);
@@ -229,7 +271,7 @@ export async function runJudged(
     }
     summary = out.summaryMarkdown ?? '';
     // Let the last pickups land before the final read; a bot that died or disconnected must not turn a FAIL into an ERROR.
-    await Promise.race([b.waitForTicks(20).catch(() => undefined), new Promise((r) => setTimeout(r, 2000))]);
+    await Promise.race([bot.waitForTicks(20).catch(() => undefined), new Promise((r) => setTimeout(r, 2000))]);
     verdict = await session.finish(out.endReason);
   } catch (err) {
     const message = (err as Error).message;

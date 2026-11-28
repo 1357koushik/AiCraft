@@ -282,3 +282,98 @@ describe('world events in task files', () => {
     expect(() => validateEvents({ at: 5 })).toThrow();
   });
 });
+
+describe('the companion across disconnects and LLM outages', () => {
+  it('keeps its orders over a reconnect and runs the cut-off task again on the new bot', async () => {
+    const { registry, runs } = makeRegistry();
+    const bot1 = fakeBot();
+    const seen: any[] = [];
+    let first = true;
+    const brain = async (o: BrainOptions): Promise<BrainResult> => {
+      if (o.task === 'always stand by me') return result('standing', { standing: { plan: { steps: [{ skill: 'stand', args: {} }], notes: '' }, untilStopped: true } });
+      seen.push(o.bot);
+      if (first) {
+        first = false;
+        while (!o.signal.aborted) await sleep(10);
+        return result('cancelled');
+      }
+      return result('done');
+    };
+    const c = new Companion({ bot: bot1, owners: ['Owner'], registry, llm: {} as any, log: () => undefined, brain });
+    c.start();
+    bot1.emit('chat', 'Owner', 'always stand by me');
+    await until(() => runs.stand === 1);
+    bot1.emit('chat', 'Owner', 'do a long task');
+    await until(() => seen.length === 1);
+    c.detach();
+    await sleep(50);
+    const bot2 = fakeBot();
+    c.rebind(bot2);
+    await until(() => seen.length === 2);
+    expect(seen[1]).toBe(bot2);
+    expect(c.history.map((t) => t.status)).toEqual(['done', 'done']);
+    expect(c.activeOrders).toHaveLength(1);
+    // Chat now comes from the new bot; the old one is ignored.
+    bot1.emit('chat', 'Owner', 'stop');
+    await sleep(50);
+    expect(c.activeOrders).toHaveLength(1);
+    await until(() => runs.stand >= 2);
+    bot2.emit('chat', 'Owner', 'stop');
+    await until(() => c.activeOrders.length === 0);
+    await c.shutdown();
+  });
+
+  it('retries a task whose LLM could not be reached, then reports it', async () => {
+    const { registry } = makeRegistry();
+    const bot = fakeBot();
+    let calls = 0;
+    const brain = async (): Promise<BrainResult> => (calls++, calls < 3 ? result('llm_error', { message: 'fetch failed', calls: 0 }) : result('done'));
+    const c = new Companion({ bot, owners: ['Owner'], registry, llm: {} as any, log: () => undefined, brain });
+    c.start();
+    bot.emit('chat', 'Owner', 'get me a log');
+    await until(() => calls === 1);
+    expect(bot.said.some((s: string) => /can't reach my LLM right now; I'll try "get me a log" again in 30 s/.test(s))).toBe(true);
+    for (let i = 0; i < 2; i++) {
+      await until(() => (c as any).queue.length === 1);
+      (c as any).queue[0].notBefore = 0;
+      c['wake']?.();
+      await until(() => calls === i + 2);
+    }
+    await until(() => c.history.length === 1);
+    expect(c.history[0].status).toBe('done');
+    await c.shutdown();
+  });
+
+  it('simulates outages only inside their windows', async () => {
+    const { withOutages } = await import('../src/harness/companion_runner.js');
+    const t0 = Date.now();
+    const llm = withOutages({ model: 'x', complete: async () => ({ text: 'ok', inputTokens: 0, outputTokens: 0, latencyMs: 0 }) } as any, [{ from: 0, to: 0.05 }], () => t0);
+    await expect(llm.complete('s', 'u')).rejects.toThrow(/simulated LLM outage/);
+    await sleep(70);
+    await expect(llm.complete('s', 'u')).resolves.toMatchObject({ text: 'ok' });
+  });
+});
+
+describe('standing orders share the bot', () => {
+  it('a guard-style order makes way for a nightly one, then picks up again', async () => {
+    const { registry, runs } = makeRegistry();
+    const bot = fakeBot();
+    bot.time = { timeOfDay: 6000, day: 2 };
+    const brain = async (o: BrainOptions): Promise<BrainResult> =>
+      o.task === 'always stand by me'
+        ? result('standing', { standing: { plan: { steps: [{ skill: 'stand', args: {} }], notes: '' }, untilStopped: true } })
+        : result('standing', { standing: { plan: { steps: [{ skill: 'tick', args: {} }], notes: '' }, when: 'night', untilStopped: false } });
+    const c = new Companion({ bot, owners: ['Owner'], registry, llm: {} as any, log: () => undefined, brain });
+    c.start();
+    bot.emit('chat', 'Owner', 'always stand by me');
+    await until(() => runs.stand === 1);
+    bot.emit('chat', 'Owner', 'every night tick');
+    await until(() => c.activeOrders.length === 2 && runs.stand === 2);
+    expect(runs.tick).toBe(0);
+    bot.time = { timeOfDay: 13000, day: 2 };
+    await until(() => runs.tick === 1, 4000);
+    await until(() => runs.stand === 3, 4000);
+    expect(runs.tick).toBe(1);
+    await c.shutdown();
+  });
+});

@@ -34,6 +34,23 @@ export interface CompanionSpec {
   properties?: Record<string, string>;
   /** Timed things the world does during the run (see JudgedSpec.events). */
   events?: WorldEvent[];
+  /** Reconnect the bot when it is kicked or drops, as `npm run companion` does (see JudgedSpec.reconnect). */
+  reconnect?: boolean;
+  /** Windows (seconds after the run starts) in which every LLM call fails, as in a provider outage. */
+  llmOutages?: Array<{ from: number; to: number }>;
+}
+
+/** An LLM client that fails every call inside the outage windows, measured from `start`. */
+export function withOutages(llm: ChatClient, outages: Array<{ from: number; to: number }>, start: () => number): ChatClient {
+  if (!outages.length) return llm;
+  return {
+    model: llm.model,
+    async complete(system, user) {
+      const t = (Date.now() - start()) / 1000;
+      if (outages.some((o) => t >= o.from && t < o.to)) throw new Error(`fetch failed (simulated LLM outage at ${Math.round(t)} s)`);
+      return llm.complete(system, user);
+    },
+  };
 }
 
 export function loadCompanionSpec(filePath: string): CompanionSpec {
@@ -52,7 +69,12 @@ export function loadCompanionSpec(filePath: string): CompanionSpec {
     checkpoint: raw.checkpoint,
     properties: raw.properties,
     events: validateEvents(raw.events),
+    reconnect: raw.reconnect === true,
+    llmOutages: raw.llmOutages,
   };
+  for (const o of spec.llmOutages ?? []) {
+    if (!(typeof o?.from === 'number' && typeof o?.to === 'number' && o.from >= 0 && o.to > o.from)) throw new Error(`${filePath}: llmOutages entries need 0 <= from < to (seconds)`);
+  }
   validateExpectations(spec.expect);
   for (const pattern of spec.expectBotSaid ?? []) {
     // In JSON "\b" is a backspace, not a word boundary; a pattern holding one can never match chat.
@@ -74,7 +96,8 @@ export async function runCompanionSpec(
   opts: { registry?: SkillRegistry; llm?: ChatClient; requirements?: RequirementsSource; log?: (l: string) => void; botName?: string } = {}
 ): Promise<CompanionRunOutput> {
   const registry = opts.registry ?? buildRegistry();
-  const llm = opts.llm ?? createChatClient();
+  let startedAt = Date.now();
+  const llm = withOutages(opts.llm ?? createChatClient(), spec.llmOutages ?? [], () => startedAt);
   const botName = opts.botName ?? 'dragonai';
   const ownerName = spec.owner.name ?? DEFAULT_OWNER_NAME;
   let tasks: TaskItem[] = [];
@@ -90,8 +113,10 @@ export async function runCompanionSpec(
       checkpoint: spec.checkpoint,
       properties: spec.properties,
       events: spec.events,
+      reconnect: spec.reconnect,
     },
-    async ({ bot, signal, log, runDir }) => {
+    async ({ bot, signal, log, runDir, onBotChange }) => {
+      startedAt = Date.now();
       const decisions = fs.createWriteStream(path.join(runDir, 'decisions.ndjson'));
       const companion = new Companion({
         bot,
@@ -104,6 +129,7 @@ export async function runCompanionSpec(
         record: (e) => decisions.write(`${JSON.stringify({ t: new Date().toISOString(), ...e })}\n`),
       });
       companion.start();
+      onBotChange?.((nb) => (nb ? companion.rebind(nb) : companion.detach()));
       const until = Date.now() + spec.runSeconds * 1000;
       while (Date.now() < until && !signal.aborted) await new Promise((r) => setTimeout(r, 500));
       await companion.shutdown();

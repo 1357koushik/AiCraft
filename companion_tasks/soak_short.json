@@ -1,0 +1,164 @@
+{
+  "id": "soak_short",
+  "seed": "20261109",
+  "runSeconds": 900,
+  "reconnect": true,
+  "llmOutages": [
+    {
+      "from": 420,
+      "to": 540
+    }
+  ],
+  "setup": [
+    "gamerule doDaylightCycle true",
+    "gamerule doWeatherCycle false",
+    "gamerule doMobSpawning true",
+    "gamerule playersSleepingPercentage 1",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 121 90 150 121 90 cobblestone_wall",
+    "fill 90 121 130 150 121 130 cobblestone_wall",
+    "fill 90 121 90 90 121 130 cobblestone_wall",
+    "fill 150 121 90 150 121 130 cobblestone_wall",
+    "setblock 100 121 100 chest[facing=west]",
+    "item replace block 100 121 100 container.0 with oak_log 32",
+    "setblock 104 121 100 chest[facing=west]",
+    "fill 130 121 110 142 123 122 oak_fence",
+    "fill 131 121 111 141 123 121 air",
+    "summon cow 134.5 121 114.5 {PersistenceRequired:1b}",
+    "summon cow 136.5 121 116.5 {PersistenceRequired:1b}",
+    "summon cow 138.5 121 118.5 {PersistenceRequired:1b}",
+    "summon cow 134.5 121 118.5 {PersistenceRequired:1b}",
+    "summon cow 138.5 121 114.5 {PersistenceRequired:1b}",
+    "summon cow 136.5 121 120.5 {PersistenceRequired:1b}",
+    "time set 1000",
+    "tp OwnerPlayer 110.5 121 108.5",
+    "tp dragonai 108.5 121 106.5",
+    "clear dragonai",
+    "setworldspawn 108 121 106",
+    "gamerule spawnRadius 0",
+    "give dragonai iron_sword 1",
+    "give dragonai iron_helmet 1",
+    "give dragonai iron_leggings 1",
+    "give dragonai iron_boots 1",
+    "give dragonai shield 1",
+    "give dragonai red_bed 1",
+    "give dragonai bread 4",
+    "give dragonai cobblestone 8",
+    "give dragonai furnace 1",
+    "give dragonai coal 8",
+    "give dragonai leather_chestplate 1"
+  ],
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      110.5,
+      121,
+      108.5
+    ],
+    "script": [
+      {
+        "wait": 5
+      },
+      {
+        "say": "from now on, always guard me"
+      },
+      {
+        "wait": 30
+      },
+      {
+        "say": "every night, sleep in your bed"
+      },
+      {
+        "wait": 30
+      },
+      {
+        "say": "every 5 minutes, put all the cobblestone you have into the chest at 104 121 100"
+      },
+      {
+        "wait": 40
+      },
+      {
+        "say": "how many oak logs are in the chest at 100 121 100?"
+      },
+      {
+        "wait": 60
+      },
+      {
+        "say": "bring me 5 oak logs from the chest at 100 121 100"
+      },
+      {
+        "wait": 120
+      },
+      {
+        "say": "build a 3 block tall cobblestone pillar at 120 121 120"
+      },
+      {
+        "wait": 120
+      },
+      {
+        "say": "status"
+      },
+      {
+        "wait": 475
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": 240,
+      "command": "give dragonai cobblestone 8"
+    },
+    {
+      "at": 300,
+      "command": "kick dragonai Soak test: connection dropped"
+    }
+  ],
+  "expect": {
+    "ownerInventory": {
+      "oak_log": ">=5"
+    },
+    "blocks": [
+      {
+        "x": 120,
+        "y": 121,
+        "z": 120,
+        "block": "cobblestone"
+      },
+      {
+        "x": 120,
+        "y": 122,
+        "z": 120,
+        "block": "cobblestone"
+      },
+      {
+        "x": 120,
+        "y": 123,
+        "z": 120,
+        "block": "cobblestone"
+      }
+    ],
+    "containers": [
+      {
+        "x": 104,
+        "y": 121,
+        "z": 100,
+        "items": {
+          "cobblestone": ">=8"
+        }
+      }
+    ],
+    "ownerDamageTakenMax": 10,
+    "maxDeaths": 0
+  },
+  "expectBotSaid": [
+    "^Standing order: from now on, always guard me",
+    "^Standing order: every night",
+    "^Standing order: every 5 minutes",
+    "32"
+  ],
+  "callBudget": 10
+}
