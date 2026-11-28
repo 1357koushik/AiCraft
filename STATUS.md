@@ -36,7 +36,7 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 
 **With an owner (scripted second player), three seeds each:** "come here" 3 of 3, "give me 5 oak logs" 3 of 3 (checked in the owner's inventory; re-run after the give fix below), "follow me for the next minute" 3 of 3 (93% of polls within 5 blocks), "protect me from the zombies for the next minute" 3 of 3 (3 zombies killed each time, owner took no damage), "guard me against the creeper for the next minute" 3 of 3 (creeper killed, owner unhurt, the yard's walls still intact), "get me 4 sand" 3 of 3.
 
-**Staying alive (Phase 5), three seeds each:** "it's getting dark, get through the night safely" with a bed held 3 of 3 (the LLM chose `sleep`; the server's `sleep_in_bed` stat and its clock confirm the night was skipped), "make me 2 cooked beef" with cows in a pen 3 of 3, and "build a pillar of 3 cobblestone at ..." with the bot killed 3 seconds in (`death_recovery`) 3 of 3: code waited for the respawn, walked back 44 blocks, picked up everything it had dropped, and the LLM then finished the pillar with the recovered blocks.
+**Staying alive (Phase 5), three seeds each:** "it's getting dark, get through the night safely" with a bed held 3 of 3 (the LLM chose `sleep`; the server's `sleep_in_bed` stat and its clock confirm the night was skipped), "make me 2 cooked beef" with cows in a pen 3 of 3, "kill that zombie" 3 of 3 (and 3 of 3 with the zombie standing off so `hunt` walks to it; one LLM call each, ended by the new `killed` done-condition), "guard me for the night" with 12 mobs summoned through a 4-minute night 3 of 3 after two fixes below (every mob killed including the creeper, owner hurt at most 5 hp, the platform round the owner uncratered), "how many oak logs are in the chest at ...?" 3 of 3 (look first, then answer; 2 LLM calls), and "build a pillar of 3 cobblestone at ..." with the bot killed 3 seconds in (`death_recovery`) 3 of 3: code waited for the respawn, walked back 44 blocks, picked up everything it had dropped, and the LLM then finished the pillar with the recovered blocks.
 
 ### The companion (Phase 4): tasks given in chat
 
@@ -55,6 +55,7 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 | "from now on, always guard me", then "give me 2 bread", then zombies arrive | 3 of 3 | the guard order was set aside for the bread and resumed by itself; 3 zombies killed each time, owner took no damage, bread in the owner's inventory |
 | "every minute, put all the cobblestone you have into the chest at ...", with cobblestone arriving twice | 3 of 3 | 24 cobblestone in the chest (three rounds) from one LLM call to set it up and one to repair the first round's plan |
 | "every night, sleep in your bed" said by day, night falls 30 s later | 3 of 3 after the bed-spot fix (3 of 6 before) | `sleep_in_bed` stat and the server clock; one LLM call to set it up on two seeds |
+| **2-hour soak**: standing guard, nightly sleep and 5-minute store orders, 11 requests spread over 2 hours, two forced disconnects and two LLM outages | 1 run (seed 20261109) | every world check passed: pillar built, 101 cobblestone stored, 8 logs handed over, owner unhurt, no deaths; all 11 nights slept through; both reconnects on the first try with queue and orders kept; tasks during the outages retried and finished; 19 LLM calls in all. 10 of 11 requests done ("craft a wooden pickaxe" stalled: the LLM guessed a chest's position, which the brief now gives). The verdict file says FAIL because the run crossed midnight and the judge then saw only the last 9 of 34 chat lines; re-read from the judge's own timeline with the fixed runner, all chat checks pass |
 | killed while idle, 44 blocks from the respawn point | 3 of 3 | inventory on the server matches what was carried; no LLM call |
 | food drained to 6 with no food held, cows and a furnace nearby | 3 of 3 | food bar 20 on the server at the end; cows killed per the stats file |
 
@@ -85,6 +86,7 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 | `hunt` (passive animals, spares 2, never pets, villagers or named mobs) | **Server-judged PASS, 3 of 3** | `hunt_cows`; only cows tried live |
 | `obtain` of cooked food (hunt, then smelt) | **Server-judged PASS, 3 of 3** | `obtain_cooked_beef` |
 | Armor upkeep (code puts on better armor and a shield) | **Server-judged PASS, 3 of 3** | `armor_upkeep`: leather boots and a golden helmet swapped for iron; all five slots read from the server's `equipment` data |
+| `descend` + `obtain diamond` (staircase down to y -58, from an iron pickaxe start) | **Server-judged PASS, 3 of 3** | `obtain_diamonds`: 3 diamonds each in 4 to 9 minutes, no deaths. It picks a shaft column without caves or liquid, turns away from lava and water next to any cell it digs, bridges small gaps, hands off to the pathfinder for a few blocks when only an open cave is left, lights the way, digs with stone pickaxes (crafting enough at the surface first) and keeps the iron one for the ore. Earlier versions failed 12 runs on the way |
 | `recover_items` (back to the death spot for the drops) | **Server-judged PASS, 6 of 6** | `death_recovery` and `idle_death` |
 
 ### The judge
@@ -99,7 +101,7 @@ Nothing is called working below 5 judged runs; pass rates are always given.
 | Things the world does during a run | A task file's `events` (a kill, a mob, nightfall, items arriving) are run by the harness at set times and listed in the verdict as world events, apart from assistance |
 | Items in a crafting grid or on the cursor | Not visible to RCON |
 
-Across all judged runs so far (counted from the run folders): 319 PASS, 75 FAIL, 14 ERROR, 7 UNVERIFIED, 2 ASSISTED (the deliberate `/give` check, and the first idle-death run, before declared world events were told apart from help). The UNVERIFIED runs are early chat scenarios that had no server-checkable expectation. The errors are harness problems, mostly runs that collided on the server before the queueing lock existed.
+Across all judged runs so far (counted from the run folders): 354 PASS, 101 FAIL, 14 ERROR, 7 UNVERIFIED, 2 ASSISTED (the deliberate `/give` check, and the first idle-death run, before declared world events were told apart from help). The UNVERIFIED runs are early chat scenarios that had no server-checkable expectation. The errors are harness problems, mostly runs that collided on the server before the queueing lock existed.
 
 ### The old agent (`npm start`, `npm run task`)
 Still runs: a Mineflayer bot with an LLM picking one action about once a second, hand-written goal plans, and about 58 older actions. With the crafting fix it passed "craft a stone pickaxe" 9 of 9 on three seeds. It is replaced by the decision loop above and is no longer developed.
@@ -117,12 +119,22 @@ Nether, fortress, blaze, piglin, stronghold, End and Ender Dragon code in `src/d
 - **The verdict called a test's own kill "assistance".** Commands a task file declares as world events are now matched to their log lines and listed apart.
 - **"Always guard me" guarded the bot's own spot on one seed:** the LLM sent `guard {}` with no player. The prompt now says "me" means the owner and must be passed to guard, follow, come_to and give; the rerun named the owner.
 - **A nightly sleep order failed on one seed** because the LLM gave the owner's position as the bed's; the repair kept the mistake and the order was set aside after 3 tries. `sleep` now falls back to a bed nearby or the one held when the given spot has none.
+- **A creeper killed the guard mid-fight:** while the fight reflex held the body, nothing else was checked, so a creeper lighting its fuse next to a zombie fight could not be fled. A fight now breaks off the moment a fuse is lit or a creeper is at arm's length.
+- **Skeletons shot the owner from out of guard range;** guard now meets archers as far out as creepers.
+- **"Kill that zombie" wandered 241 blocks:** the reflex had already killed the zombie, and done_when could not say so. done_when gained `killed`, counted from the bot's own hits.
+- **A spider on a cave wall held the bot for 8 minutes:** the fight reflex retried a mob it could not reach. A mob not hurt in a whole fight is now left alone for 30 s.
+- **Digging down to diamonds:** the step walked past its cell and the loop kept planning from where the bot had been; the iron pickaxe wore out on the staircase; a crafting table cannot be placed in a 2x2 shaft. Fixed in that order.
+- **The companion lost its state on a reconnect,** and an LLM outage failed the owner's task; now the companion keeps its queue and orders across a new connection and retries a task after an outage.
+- **"Always guard me" never let a nightly order run;** a scheduled standing order now interrupts a guard-style one.
+- **A midnight log rotation hid the bot's chat from the judge;** chat is now read from the judge's own timeline.
 - **The bed went on the owner's feet:** `sleep` looked only at blocks when choosing where to put a held bed, so next to the owner it picked the cells the owner stood in and the server refused it. It now skips cells any player or mob stands in.
 - **"Get through the night" stalled on all seeds:** done_when could not say "the night is over", and the LLM kept writing conditions that were already true. done_when gained `time_of_day` (and `food_at_least` for eating); then 3 of 3.
 - **A JSON task file wrote the regex `\b10\b` with single backslashes, so `\b` became a backspace,** which failed a correct answer; the companion runner now refuses patterns with control characters.
 
 ## Known issues
 - **Navigation on hilly terrain:** a tree visible but unreachable from the spawn defeats chop_tree and go_to; the loop gives up honestly but cannot route around it.
+- **`guard_me` on seed 20261109 is flaky:** 2 of its 4 runs on 2026-11-28 had only one zombie leave the pen (the zombies must see a player through the door). Seeds 7 and 42 pass every time.
+- **Deep mining is proven for diamonds from a surface start with sticks, cobblestone and torches in the kit;** iron from nothing to diamond armor (24 diamonds) is not tried yet.
 - **Repairing a failed standing order can repeat the mistake:** the LLM sees the failure, but the nightly sleep order got the same wrong coordinates twice before being set aside.
 - **`give` to a player who stands still:** in the standing-guard runs, 1 of 2 bread landed about 1.5 blocks beside the owner and was not picked up; the loop gave again and once the owner ended with 3. A real player would walk over; the scripted owner does not.
 - **No fuel-only furnace step yet,** so "keep the furnace fuelled" is not possible; the periodic order was tested with storing instead.
