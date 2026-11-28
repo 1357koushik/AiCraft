@@ -7,6 +7,7 @@ import { craftSkill } from './craft.js';
 import { mineSkill } from './mine.js';
 import { chopTreeSkill } from './chop_tree.js';
 import { useStationSkill } from './use_station.js';
+import { descendSkill, descentTarget } from './descend.js';
 import { exploreForSkill } from './explore_for.js';
 import { animalsDropping, huntSkill } from './hunt.js';
 
@@ -208,22 +209,35 @@ async function viaHunting(job: Job, item: string, need: number): Promise<void> {
 
 async function viaMining(job: Job, item: string, need: number, way: { blocks: string[] }): Promise<void> {
   const bot = job.ctx.bot;
+  // The tool first: the search below may dig (deep ores) and the mining needs it anyway.
+  const plan = toolPlanFor(way.blocks[0], blockRequiresTool(way.blocks[0]));
+  if (plan.requiresTool && !plan.workingTools.some((t) => held(bot, [t]) > 0)) {
+    const tool = minimumTool(plan);
+    if (!tool) throw new ObtainStop(`No tool can harvest ${way.blocks[0]}.`, 'missing_tool');
+    await acquire(job, tool, 1);
+  }
   // Prefer a block kind that is actually nearby; ores come in stone and deepslate forms.
-  const nearBlock = () => way.blocks.find((b) => bot.findBlock({ matching: (x: any) => x.name === b, maxDistance: 48 }));
+  const nearBlock = () => way.blocks.find((b) => bot.findBlock({ matching: (x: any) => x.name === b, maxDistance: 64 }));
   let near = nearBlock();
+  // Deep ores (diamond, redstone): dig a staircase down to their level first, then look again, so the bot never walks
+  // into caves on the way. With one already in sight, go only as deep as it is.
+  const oreY = () => {
+    const found = bot.findBlock({ matching: (x: any) => way.blocks.includes(x.name), maxDistance: 64 });
+    return found ? found.position.y : null;
+  };
+  const deepY = descentTarget(way.blocks[0], Math.floor(bot.entity.position.y), oreY());
+  if (deepY !== null) {
+    const down = await step(job, `dig down to y ${deepY}`, descendSkill, { y: deepY });
+    if (down.status !== 'done') throw new ObtainStop(`Could not dig down to ${way.blocks[0]} level: ${down.message}`, down.cause ?? 'unknown', down.fix);
+    near = nearBlock();
+  }
   if (!near) {
-    // Nothing within 48 blocks: go looking (the places memory first, then outward), then mine what was found.
+    // Nothing within reach: go looking (the places memory first, then outward), then mine what was found.
     const found = await step(job, `find ${way.blocks[0]}`, exploreForSkill, { target: way.blocks[0] });
     if (found.status === 'failed') throw new ObtainStop(`No ${way.blocks[0]} within reach and the search failed: ${found.message}`, found.cause ?? 'not_found_nearby', found.fix);
     near = nearBlock();
   }
   near ??= way.blocks[0];
-  const plan = toolPlanFor(near, blockRequiresTool(near));
-  if (plan.requiresTool && !plan.workingTools.some((t) => held(bot, [t]) > 0)) {
-    const tool = minimumTool(plan);
-    if (!tool) throw new ObtainStop(`No tool can harvest ${near}.`, 'missing_tool');
-    await acquire(job, tool, 1);
-  }
   const r = await step(job, `${need} ${item}`, mineSkill, { block: near, count: need, maxDistance: 64 });
   if (r.status === 'failed') throw new ObtainStop(`Mining ${near} failed: ${r.message}`, r.cause ?? 'unknown', r.fix);
 }

@@ -5,6 +5,7 @@ import { ToolPlan, lootDrops, minimumTool, toolPlanFor } from '../knowledge/harv
 import { withInventoryLock } from '../actions/reliable_craft.js';
 import { Precondition, ProgressWatchdog, SkillContext, SkillDefinition, SkillOutcome } from './contract.js';
 import { pickUpDrops } from './collect_drops.js';
+import { oreVariants } from './descend.js';
 import { DIG_REACH, FACE_OFFSETS, GoalReachBlock, canHold, countItems, eyeDistance, goTo, isLiquid, posKey, sleep, stopOnAbort, stopPathfinder, stripNs } from './world.js';
 
 /**
@@ -66,6 +67,12 @@ function heldCanHarvest(bot: Bot, plan: ToolPlan): boolean {
   return bot.inventory.items().some((i) => plan.workingTools.includes(i.name)) || plan.workingTools.includes(bot.heldItem?.name ?? '');
 }
 
+/** Block ids that count as the target: an ore also means its deepslate form. */
+function targetIds(bot: Bot, block: string): number[] {
+  const by = (bot.registry as any).blocksByName;
+  return oreVariants(block, (n) => Boolean(by[n])).map((n) => by[n].id);
+}
+
 function evaluate(bot: Bot, args: MineArgs): Precondition & { plan?: ToolPlan } {
   const reg = (bot.registry as any).blocksByName[args.block];
   if (!reg) return { ok: false, cause: 'invalid_args', message: `There is no block called "${args.block}".` };
@@ -90,7 +97,7 @@ function evaluate(bot: Bot, args: MineArgs): Precondition & { plan?: ToolPlan } 
       fix: min ? `get a ${min} (or better)` : undefined,
     };
   }
-  const found = bot.findBlocks({ matching: [reg.id], maxDistance: args.maxDistance, count: 1 });
+  const found = bot.findBlocks({ matching: targetIds(bot, args.block), maxDistance: args.maxDistance, count: 1 });
   if (!found.length) return { ok: false, cause: 'not_found_nearby', message: `No ${args.block} within ${args.maxDistance} blocks in the loaded world.`, fix: 'explore to find some' };
   return { ok: true, plan };
 }
@@ -158,7 +165,8 @@ export const mineSkill: SkillDefinition<MineArgs> = {
     const r = evaluate(bot, args);
     if (!r.ok) return { status: 'failed', cause: r.cause, message: r.message, fix: r.fix, evidence };
     const plan = r.plan!;
-    const reg = (bot.registry as any).blocksByName[args.block];
+    const ids = targetIds(bot, args.block);
+    const kindNames = new Set(ids.map((i) => (bot.registry as any).blocks[i].name));
     const dropSet = new Set(plan.drops);
     const dropCount = () => countItems(bot, (n) => dropSet.has(n));
     const dropsBefore = dropCount();
@@ -190,7 +198,7 @@ export const mineSkill: SkillDefinition<MineArgs> = {
         }
 
         // Pick the next target: nearest first, blocks open to the air before buried ones.
-        const positions: Vec3[] = bot.findBlocks({ matching: [reg.id], maxDistance: args.maxDistance, count: 64 });
+        const positions: Vec3[] = bot.findBlocks({ matching: ids, maxDistance: args.maxDistance, count: 64 });
         const me = bot.entity.position;
         const scored: { pos: Vec3; score: number }[] = [];
         for (const pos of positions) {
@@ -225,7 +233,7 @@ export const mineSkill: SkillDefinition<MineArgs> = {
 
         // Re-read the block right before acting: it may have changed while we walked.
         const live = bot.blockAt(target);
-        if (!live || live.name !== args.block) {
+        if (!live || !kindNames.has(live.name)) {
           excluded.add(key);
           continue;
         }
@@ -267,7 +275,7 @@ export const mineSkill: SkillDefinition<MineArgs> = {
         const dropsAtDig = dropCount();
         await sleep(120);
         const after = bot.blockAt(target);
-        if (after && after.name === args.block) {
+        if (after && kindNames.has(after.name)) {
           // The server put it back (protection, desync) or the break did not register.
           digFailures++;
           excluded.add(key);
@@ -275,7 +283,7 @@ export const mineSkill: SkillDefinition<MineArgs> = {
           continue;
         }
         mined++;
-        broken.push({ x: target.x, y: target.y, z: target.z, block: args.block });
+        broken.push({ x: target.x, y: target.y, z: target.z, block: live.name });
         watchdog.report(mined);
 
         const got = await pickUpDrops(ctx, {

@@ -1,0 +1,37 @@
+{
+  "id": "obtain_diamonds",
+  "seed": "20261109",
+  "timeoutSec": 3600,
+  "setup": [
+    "time set day",
+    "give dragonai iron_pickaxe 1",
+    "give dragonai stone_pickaxe 1",
+    "give dragonai torch 32",
+    "give dragonai cobblestone 16",
+    "give dragonai bread 8",
+    "give dragonai water_bucket 1",
+    "give dragonai stick 8",
+    "give dragonai crafting_table 1"
+  ],
+  "plan": {
+    "notes": "From the surface with an iron pickaxe, a stone pickaxe, sticks and a crafting table: find diamonds deep underground (deepslate_diamond_ore below y 0) without dying to lava, falls or mobs. The staircase is dug with stone pickaxes, made again from the stone it digs as they wear out; the iron one is kept for the ore.",
+    "steps": [
+      {
+        "skill": "obtain",
+        "args": {
+          "item": "diamond",
+          "count": 3
+        }
+      }
+    ]
+  },
+  "expect": {
+    "inventory": {
+      "diamond": ">=3"
+    },
+    "stats": {
+      "picked_up:diamond": ">=3"
+    },
+    "maxDeaths": 0
+  }
+}

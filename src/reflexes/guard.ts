@@ -60,18 +60,22 @@ function explosiveEmergency(bot: Bot): Entity | null {
   return best;
 }
 
+/** How long a mob the fight reflex could not hurt is left alone. Fleeing and explosions still see it. */
+const OUT_OF_REACH_MS = 30000;
+
 export interface ReflexEvent {
   reflex: string;
   detail: string;
 }
 
-function nearestThreat(bot: Bot, range: number, skipCreepers = false): Entity | null {
+function nearestThreat(bot: Bot, range: number, skipCreepers = false, ignored?: Map<number, number>): Entity | null {
   const me = bot.entity.position;
   let best: Entity | null = null;
   let bestD = range;
+  const now = Date.now();
   for (const e of Object.values(bot.entities)) {
     if (e === bot.entity || !e.position || !e.name || !HOSTILE.has(e.name) || (skipCreepers && e.name === 'creeper')) continue;
-    if ((e as any).isValid === false) continue;
+    if ((e as any).isValid === false || (ignored?.get(e.id) ?? 0) > now) continue;
     const d = e.position.distanceTo(me);
     if (d < bestD) {
       bestD = d;
@@ -204,10 +208,17 @@ export async function bestWeaponInHand(bot: Bot): Promise<void> {
   }
 }
 
-async function fight(bot: Bot, target: Entity, log: (e: ReflexEvent) => void): Promise<void> {
+/** Fights `target` for up to 15 s. Returns whether it was hurt at all: a mob never hurt was out of reach (a spider on a cave wall). */
+async function fight(bot: Bot, target: Entity, log: (e: ReflexEvent) => void): Promise<boolean> {
   await bestWeaponInHand(bot);
   const until = Date.now() + 15000;
   let lastSwing = 0;
+  let hurt = false;
+  const onHurt = (e: Entity) => {
+    if (e === target) hurt = true;
+  };
+  bot.on('entityHurt', onHurt);
+  try {
   // A lit fuse or a creeper at arm's length ends the fight at once, so the next tick can flee (explosions come first).
   while (Date.now() < until && target.isValid !== false && bot.health > 6 && !explosiveEmergency(bot)) {
     const d = target.position.distanceTo(bot.entity.position);
@@ -237,9 +248,13 @@ async function fight(bot: Bot, target: Entity, log: (e: ReflexEvent) => void): P
     }
     await sleep(100);
   }
+  } finally {
+    bot.off('entityHurt', onHurt);
+  }
   setShield(bot, false);
   bot.clearControlStates();
-  log({ reflex: 'fight', detail: `${target.name} ${target.isValid === false ? 'killed or gone' : 'left or bot hurt'}` });
+  log({ reflex: 'fight', detail: `${target.name} ${target.isValid === false ? 'killed or gone' : hurt ? 'left or bot hurt' : 'out of reach: left alone for 30 s'}` });
+  return hurt || target.isValid === false;
 }
 
 function bestFood(bot: Bot): any | null {
@@ -306,6 +321,7 @@ export function installReflexGuard(bot: Bot, onEvent: (e: ReflexEvent) => void =
   installPauseWrappers(bot);
   ProgressWatchdog.isPaused = () => body.reflexActive;
   let busy = false;
+  const outOfReach = new Map<number, number>();
   let lastHurtBy: Entity | null = null;
   let lastHurtAt = 0;
 
@@ -388,7 +404,7 @@ export function installReflexGuard(bot: Bot, onEvent: (e: ReflexEvent) => void =
     }
 
     const threat = nearestThreat(bot, 8);
-    const fightThreat = nearestThreat(bot, 8, true);
+    const fightThreat = nearestThreat(bot, 8, true, outOfReach);
     const recentAttacker = lastHurtBy && Date.now() - lastHurtAt < 3000 && lastHurtBy.isValid !== false ? lastHurtBy : null;
 
     // 3. Flee a creeper (or warden, ravager) that is close, or anything dangerous when health is low.
@@ -410,9 +426,13 @@ export function installReflexGuard(bot: Bot, onEvent: (e: ReflexEvent) => void =
     }
 
     // 4. Fight a hostile mob that is close, or whatever just hit us.
-    const fightTarget = recentAttacker && recentAttacker.name !== 'creeper' && recentAttacker.position.distanceTo(pos) < 6 ? recentAttacker : fightThreat && fightThreat.position.distanceTo(pos) < 4.5 ? fightThreat : null;
+    const attackerReachable = recentAttacker && (outOfReach.get(recentAttacker.id) ?? 0) <= Date.now();
+    const fightTarget = attackerReachable && recentAttacker!.name !== 'creeper' && recentAttacker!.position.distanceTo(pos) < 6 ? recentAttacker : fightThreat && fightThreat.position.distanceTo(pos) < 4.5 ? fightThreat : null;
     if (fightTarget) {
-      void act('fight', async () => fight(bot, fightTarget, onEvent));
+      void act('fight', async () => {
+        // A mob the bot cannot hurt (on a wall, behind a block) is left alone for a while instead of fought forever.
+        if (!(await fight(bot, fightTarget, onEvent))) outOfReach.set(fightTarget.id, Date.now() + OUT_OF_REACH_MS);
+      });
       return;
     }
 
