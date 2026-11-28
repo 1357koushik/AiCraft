@@ -1,0 +1,27 @@
+{
+  "id": "kill_zombie_far",
+  "text": "kill that zombie",
+  "timeoutSec": 150,
+  "callBudget": 6,
+  "setup": [
+    "gamerule doDaylightCycle false",
+    "gamerule doMobSpawning false",
+    "gamerule doWeatherCycle false",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "time set midnight",
+    "tp dragonai 100.5 121 110.5",
+    "give dragonai iron_sword 1",
+    "summon zombie 108.5 121 110.5 {PersistenceRequired:1b,NoAI:1b}"
+  ],
+  "expect": {
+    "stats": {
+      "killed:zombie": ">=1"
+    },
+    "maxDeaths": 0
+  },
+  "seed": "20261109"
+}

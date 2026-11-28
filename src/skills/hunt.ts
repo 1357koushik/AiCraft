@@ -4,16 +4,22 @@ import { Vec3 } from 'vec3';
 import { goals } from 'mineflayer-pathfinder';
 import { updatePathfinderMovements } from '../actions/techniques.js';
 import { body } from '../reflexes/body.js';
-import { bestWeaponInHand } from '../reflexes/guard.js';
+import { HOSTILE, bestWeaponInHand, creeperFusing } from '../reflexes/guard.js';
 import { lootTableItems } from '../knowledge/harvest.js';
 import { Precondition, SkillContext, SkillDefinition, SkillOutcome } from './contract.js';
 import { pickUpDrops } from './collect_drops.js';
+import { CREEPER_BACKOFF, creeperBackStep, creeperStrike } from './guard.js';
 import { countItems, sleep, stopMotion, stopPathfinder, stripNs } from './world.js';
 
 /**
  * hunt: kill passive farm animals for what they drop (beef, porkchop, mutton, chicken, rabbit, leather, feathers...).
  *
- * Who may be attacked: only the animals in HUNTABLE, adults (a calf drops nothing and is the herd's future), with no
+ * A hostile mob is hunted only when the LLM names it in `animal` ("zombie", "skeleton", "spider", "creeper"...; the
+ * reflexes' HOSTILE list, nothing else): `count` is then kills (or `item` as for animals), `spare` does not apply, and a
+ * creeper is hit with a sprinting swing and then backed away from, as the guard skill does. Neutral mobs (endermen,
+ * piglins, wolves), players, pets, villagers and golems are never in either list.
+ *
+ * Who may be attacked among animals: only the animals in HUNTABLE, adults (a calf drops nothing and is the herd's future), with no
  * name tag. Players, villagers, golems, horses and donkeys, wolves, cats, parrots and every other mob are never in
  * the list, so they can never be picked, and a named animal is somebody's pet whatever its species.
  *
@@ -45,6 +51,8 @@ type HuntArgs = z.infer<typeof Args>;
 const SEARCH_RADIUS = 48;
 const SPARE_RADIUS = 32;
 const SWING_REACH = 3.0;
+/** A creeper is struck from a little farther, as in guard, since the reflex runs from it inside 3 blocks. */
+const CREEPER_REACH = 3.2;
 /** A sword's attack cooldown, as in the fight reflex. */
 const SWING_MS = 650;
 const ENGAGE_MS = 25000;
@@ -78,13 +86,17 @@ function metaIndex(bot: Bot | undefined, name: string, key: string, fallback: nu
   return i >= 0 ? i : fallback;
 }
 
-/** True for an entity this skill may attack: a listed adult animal that is alive and has no name tag. */
+/** True for a hostile mob this skill may hunt when it is named. */
+export const isHostileName = (name: string | undefined): boolean => name !== undefined && HOSTILE.has(name);
+
+/** True for an entity this skill may attack: a listed adult animal, or a named hostile mob, that is alive and has no name tag. */
 export function isHuntTarget(e: any, allowed: readonly string[] = PASSIVE_DEFAULT, bot?: Bot): boolean {
   if (!e?.position || !e.name || e.isValid === false) return false;
   if (e.type === 'player' || e.username) return false;
-  if (!allowed.includes(e.name) || !(HUNTABLE as readonly string[]).includes(e.name)) return false;
+  if (!allowed.includes(e.name) || !((HUNTABLE as readonly string[]).includes(e.name) || isHostileName(e.name))) return false;
   const nameTag = metaValue(e, metaIndex(bot, e.name, 'custom_name', 2));
   if (nameTag !== undefined && nameTag !== null && nameTag !== false && nameTag !== '') return false;
+  if (isHostileName(e.name)) return true;
   if (metaValue(e, metaIndex(bot, e.name, 'baby', 16)) === true) return false;
   return true;
 }
@@ -106,14 +118,14 @@ export function pickTargets(entities: Iterable<any>, species: readonly string[],
     if (e.position.distanceTo(spot) <= SPARE_RADIUS) alive[e.name] = (alive[e.name] ?? 0) + 1;
     if (e.position.distanceTo(me) <= SEARCH_RADIUS && (ignored.get(e.id) ?? 0) <= now) all.push(e);
   }
-  const targets = all.filter((e) => (alive[e.name] ?? 0) > spare).sort((a, b) => a.position.distanceTo(me) - b.position.distanceTo(me));
+  const targets = all.filter((e) => isHostileName(e.name) || (alive[e.name] ?? 0) > spare).sort((a, b) => a.position.distanceTo(me) - b.position.distanceTo(me));
   return { targets, alive, spared: all.length - targets.length };
 }
 
 function speciesFor(args: HuntArgs): { species: string[]; error?: string } {
   if (args.animal) {
-    if (!(HUNTABLE as readonly string[]).includes(args.animal)) {
-      return { species: [], error: `${args.animal} is not an animal this skill hunts (cow, mooshroom, pig, sheep, chicken, rabbit, goat). Pets, villagers, golems and horses are never attacked.` };
+    if (!(HUNTABLE as readonly string[]).includes(args.animal) && !isHostileName(args.animal)) {
+      return { species: [], error: `${args.animal} is not a mob this skill hunts (cow, mooshroom, pig, sheep, chicken, rabbit, goat, or a hostile mob such as zombie, skeleton, spider, creeper). Pets, villagers, golems, horses and neutral mobs are never attacked.` };
     }
     return { species: [args.animal] };
   }
@@ -127,7 +139,7 @@ function check(ctx: { bot: Bot }, args: HuntArgs): Precondition {
   if (!(bot as any).pathfinder) return { ok: false, cause: 'unknown', message: 'The pathfinder is not available.' };
   if (args.item && !bot.registry.itemsByName[args.item]) return { ok: false, cause: 'invalid_args', message: `There is no item called "${args.item}".` };
   const s = speciesFor(args);
-  if (s.error) return { ok: false, cause: 'invalid_args', message: s.error, fix: 'name a farm animal (cow, pig, sheep, chicken, rabbit) or an item one of them drops (beef, porkchop, mutton, chicken, rabbit, leather, feather, wool)' };
+  if (s.error) return { ok: false, cause: 'invalid_args', message: s.error, fix: 'name a farm animal (cow, pig, sheep, chicken, rabbit), a hostile mob (zombie, skeleton, spider, creeper...) or an item one of them drops (beef, porkchop, mutton, chicken, rabbit, leather, feather, wool)' };
   const me = bot.entity.position;
   const c = pickTargets(Object.values(bot.entities), s.species, me, me, args.spare, new Map(), Date.now(), new Set(), bot);
   if (c.targets.length) return { ok: true };
@@ -145,7 +157,7 @@ function heldCount(bot: Bot, item: string): number {
 export const huntSkill: SkillDefinition<HuntArgs> = {
   name: 'hunt',
   summary:
-    'hunt {animal?, item?, count, spare?=2}: kill passive farm animals (cow, mooshroom, pig, sheep, chicken, rabbit) and pick up the drops, until `count` more of `item` is held (item "beef", count 3) or, with only `animal`, `count` animals are killed. Leaves `spare` animals of a kind alive nearby. Never touches players, pets, villagers, horses or named animals.',
+    'hunt {animal?, item?, count, spare?=2}: kill passive farm animals (cow, mooshroom, pig, sheep, chicken, rabbit) and pick up the drops, until `count` more of `item` is held (item "beef", count 3) or, with only `animal`, `count` animals are killed. Leaves `spare` animals of a kind alive nearby. Also kills a hostile mob when you name it in `animal` ("zombie", "skeleton", "spider", "creeper"...), count = kills, spare does not apply: "kill that zombie" -> hunt {animal:"zombie", count:1}. Never touches players, pets, villagers, golems, horses, neutral mobs (endermen, piglins, wolves) or named mobs.',
   args: Args,
   check: (ctx, args) => check(ctx, args),
   async run(ctx: SkillContext, args): Promise<SkillOutcome> {
@@ -180,7 +192,8 @@ export const huntSkill: SkillDefinition<HuntArgs> = {
     const countKill = (e: any) => {
       counted.add(e.id);
       kills[e.name] = (kills[e.name] ?? 0) + 1;
-      if (e.position) pending.push(e.position.clone());
+      // A hostile mob's drops are collected only when an item was asked for.
+      if (e.position && (args.item || !isHostileName(e.name))) pending.push(e.position.clone());
       ctx.log(`[hunt] killed ${e.name} (${totalKills()} so far)`);
     };
     // entityDead (the death animation) arrives before entityGone; either counts, once.
@@ -188,13 +201,24 @@ export const huntSkill: SkillDefinition<HuntArgs> = {
       if (!e || counted.has(e.id) || !(species as string[]).includes(e.name) || !swungRecently(e)) return;
       countKill(e);
     };
+    // A creeper that explodes is removed without a death status, so one that vanishes with its fuse lit is not a kill.
+    const fusingSeenAt = new Map<number, number>();
+    const onGone = (e: any) => {
+      if (e?.name === 'creeper' && (creeperFusing(e) || Date.now() - (fusingSeenAt.get(e.id) ?? 0) < 1500)) {
+        if (!counted.has(e.id)) ctx.log('[hunt] a creeper exploded (not counted as a kill)');
+        counted.add(e.id);
+        return;
+      }
+      onDeath(e);
+    };
     bot.on('entityDead', onDeath);
-    bot.on('entityGone', onDeath);
+    bot.on('entityGone', onGone);
     const killText = () => (totalKills() ? Object.entries(kills).map(([k, n]) => `${k} x${n}`).join(', ') : 'none');
 
     const ignored = new Map<number, number>();
     const engagedSince = new Map<number, number>();
     let lastSwing = 0;
+    let backoffUntil = 0;
     let goalFor: number | null = null;
     let sparedSeen = 0;
     let noneSeenSince: number | null = null;
@@ -207,7 +231,7 @@ export const huntSkill: SkillDefinition<HuntArgs> = {
     const cleanup = () => {
       bot.attack = originalAttack;
       bot.off('entityDead', onDeath);
-      bot.off('entityGone', onDeath);
+      bot.off('entityGone', onGone);
       stopMotion(ctx.bot);
     };
     const finish = (o: Pick<SkillOutcome, 'status' | 'message'> & Partial<SkillOutcome>): SkillOutcome => {
@@ -239,6 +263,7 @@ export const huntSkill: SkillDefinition<HuntArgs> = {
         }
         const now = Date.now();
         const me: Vec3 = bot.entity.position;
+        for (const m of Object.values(bot.entities) as any[]) if (m?.name === 'creeper' && creeperFusing(m)) fusingSeenAt.set(m.id, now);
         const c = pickTargets(Object.values(bot.entities), species, me, spot, args.spare, ignored, now, counted, ctx.bot);
         sparedSeen = Math.max(sparedSeen, c.spared);
         if (!c.targets.length) {
@@ -260,6 +285,22 @@ export const huntSkill: SkillDefinition<HuntArgs> = {
           continue;
         }
         const d = e.position.distanceTo(me);
+        if (e.name === 'creeper') {
+          // Hit and step back, as guard does, so the fuse (inside about 3 blocks) cannot run.
+          if (now < backoffUntil) {
+            creeperBackStep(ctx.bot);
+            await sleep(50);
+            continue;
+          }
+          bot.setControlState('back', false);
+          if (d <= CREEPER_REACH && now - lastSwing >= SWING_MS) {
+            goalFor = null;
+            if (await creeperStrike(ctx, e, CREEPER_REACH)) lastSwing = Date.now();
+            backoffUntil = Date.now() + CREEPER_BACKOFF;
+            await sleep(30);
+            continue;
+          }
+        }
         if (d > SWING_REACH) {
           if (!(bot.pathfinder.goal && goalFor === e.id)) {
             bot.pathfinder.setGoal(new goals.GoalFollow(e, 1.5), true);

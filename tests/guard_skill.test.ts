@@ -39,3 +39,16 @@ describe('guard arguments', () => {
     expect(guardSkill.args.safeParse({ minutes: 0 }).success).toBe(false);
   });
 });
+
+describe('guard reach for ranged mobs', () => {
+  it('meets a skeleton as far out as a creeper', async () => {
+    const { threatsNear } = await import('../src/skills/guard.js');
+    const { Vec3 } = await import('vec3');
+    const spot = new Vec3(0, 0, 0);
+    const list = [
+      { id: 1, name: 'skeleton', position: new Vec3(16, 0, 0) },
+      { id: 2, name: 'zombie', position: new Vec3(16, 0, 0) },
+    ];
+    expect(threatsNear(list, spot, 12, new Map(), 0, undefined, 8).map((t) => t.entity.id)).toEqual([1]);
+  });
+});

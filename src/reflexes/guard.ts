@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Entity } from 'prismarine-entity';
 import { Vec3 } from 'vec3';
 import { body } from './body.js';
-import { withInventoryLock } from '../actions/reliable_craft.js';
+import { inventoryLockBusy, withInventoryLock } from '../actions/reliable_craft.js';
 import { ProgressWatchdog } from '../skills/contract.js';
 import { installArmorUpkeep } from './armor.js';
 
@@ -99,42 +99,133 @@ function stopEverything(bot: Bot): void {
   bot.clearControlStates();
 }
 
+/**
+ * True when walking from here toward (dx, dz) would, within the next 2 blocks, step over a drop of more than 3 blocks
+ * (a fall that hurts), into lava, or into a column with nothing solid below (void or unloaded). Water below is a
+ * safe landing. Used before the reflexes set forward/sprint, so a fight or a flight never runs the bot off a ledge.
+ */
+export function dropAhead(bot: Bot, dx: number, dz: number): boolean {
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return false;
+  const me = bot.entity.position;
+  const y0 = Math.floor(me.y);
+  for (const k of [1, 2]) {
+    const x = Math.floor(me.x + (dx / len) * k);
+    const z = Math.floor(me.z + (dz / len) * k);
+    let landed = false;
+    for (let y = y0; y >= y0 - 4; y--) {
+      const b: any = bot.blockAt(new Vec3(x, y, z));
+      if (b?.name === 'lava') return true;
+      if (b && (b.boundingBox === 'block' || b.name === 'water')) {
+        landed = true;
+        break;
+      }
+    }
+    if (!landed) return true;
+  }
+  return false;
+}
+
+/** The direction to run, nearest to straight away from the threat, that has no drop ahead; null when every way is a ledge. */
+function safeAwayDir(bot: Bot, away: Vec3): Vec3 | null {
+  const base = Math.atan2(away.z, away.x);
+  for (const off of [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2, (3 * Math.PI) / 4, (-3 * Math.PI) / 4]) {
+    const dx = Math.cos(base + off);
+    const dz = Math.sin(base + off);
+    if (!dropAhead(bot, dx, dz)) return new Vec3(dx, 0, dz);
+  }
+  return null;
+}
+
+// Shield: raised only while a skeleton is drawing its bow or a creeper's fuse is lit close and there is nowhere to run.
+let shieldRaised = false;
+function setShield(bot: Bot, up: boolean): void {
+  if (up === shieldRaised) return;
+  if (up && (bot.inventory.slots as any[])[45]?.name !== 'shield') return;
+  try {
+    if (up) bot.activateItem(true);
+    else bot.deactivateItem();
+    shieldRaised = up;
+  } catch {
+    // no shield to use right now
+  }
+}
+
+const ARCHERS = new Set(['skeleton', 'stray', 'bogged']);
+/** A skeleton within 16 blocks with its bow drawn (living-entity hand-state flag, metadata 8, bit 1). */
+function archerAiming(bot: Bot): boolean {
+  for (const e of Object.values(bot.entities)) {
+    if (e === bot.entity || !e.position || !e.name || !ARCHERS.has(e.name) || e.position.distanceTo(bot.entity.position) > 16) continue;
+    const m: any = ((e as any).metadata ?? [])[8];
+    const flags = m && typeof m === 'object' && 'value' in m ? m.value : m;
+    if (typeof flags === 'number' && (flags & 1) !== 0) return true;
+  }
+  return false;
+}
+
+function fuseLitNear(bot: Bot, range: number): boolean {
+  return Object.values(bot.entities).some((e) => e !== bot.entity && e.position && e.name === 'creeper' && creeperFusing(e) && e.position.distanceTo(bot.entity.position) <= range);
+}
+
 async function moveAwayFrom(bot: Bot, from: Vec3, ms: number, shouldStop: () => boolean): Promise<void> {
   const until = Date.now() + ms;
   while (Date.now() < until && !shouldStop()) {
     const me = bot.entity.position;
     const away = me.minus(from);
-    const target = me.plus(new Vec3(away.x, 0, away.z).normalize().scaled(4));
-    await bot.lookAt(target.offset(0, 1.6, 0), true);
+    const dir = safeAwayDir(bot, new Vec3(away.x, 0, away.z));
+    if (!dir) {
+      // Every way is a ledge: stand still (behind a shield if a fuse is lit) rather than run off it.
+      bot.clearControlStates();
+      setShield(bot, fuseLitNear(bot, 5));
+      await sleep(150);
+      continue;
+    }
+    setShield(bot, false);
+    await bot.lookAt(me.plus(dir.scaled(4)).offset(0, 1.6, 0), true);
     bot.setControlState('forward', true);
     bot.setControlState('sprint', true);
     // Jump over one-block steps when blocked.
     bot.setControlState('jump', (bot.entity as any).isCollidedHorizontally === true);
     await sleep(150);
   }
+  setShield(bot, false);
   bot.clearControlStates();
 }
 
 export async function bestWeaponInHand(bot: Bot): Promise<void> {
   const weapon = WEAPONS.map((n) => bot.inventory.items().find((i) => i.name === n)).find(Boolean);
   if (!weapon || bot.heldItem?.name === weapon.name) return;
-  // Don't wait on a craft in progress: fight with what is in hand instead.
-  const result = await Promise.race([withInventoryLock(() => bot.equip(weapon, 'hand')).then(() => true, () => false), sleep(400).then(() => false)]);
-  void result;
+  // A craft or another equip is in progress: fight with what is in hand rather than queue behind it and move items later.
+  if (inventoryLockBusy()) return;
+  try {
+    await withInventoryLock(() => bot.equip(weapon, 'hand'));
+  } catch {
+    // keep what is in hand
+  }
 }
 
 async function fight(bot: Bot, target: Entity, log: (e: ReflexEvent) => void): Promise<void> {
   await bestWeaponInHand(bot);
   const until = Date.now() + 15000;
   let lastSwing = 0;
-  while (Date.now() < until && target.isValid !== false && bot.health > 6) {
+  // A lit fuse or a creeper at arm's length ends the fight at once, so the next tick can flee (explosions come first).
+  while (Date.now() < until && target.isValid !== false && bot.health > 6 && !explosiveEmergency(bot)) {
     const d = target.position.distanceTo(bot.entity.position);
     if (d > 8) break;
     await bot.lookAt(target.position.offset(0, (target.height ?? 1.8) * 0.8, 0), true);
+    // Behind the shield while an archer has its bow drawn and the bot is still closing in; down for the swing.
+    setShield(bot, d > 3 && archerAiming(bot));
     if (d > 3) {
-      bot.setControlState('forward', true);
-      bot.setControlState('sprint', d > 4);
-      bot.setControlState('jump', (bot.entity as any).isCollidedHorizontally === true);
+      const toward = target.position.minus(bot.entity.position);
+      if (dropAhead(bot, toward.x, toward.z)) {
+        // A ledge between the bot and the mob: let it come instead of running off.
+        bot.setControlState('forward', false);
+        bot.setControlState('sprint', false);
+      } else {
+        bot.setControlState('forward', true);
+        bot.setControlState('sprint', d > 4);
+        bot.setControlState('jump', (bot.entity as any).isCollidedHorizontally === true);
+      }
     } else {
       bot.setControlState('forward', false);
       bot.setControlState('sprint', false);
@@ -146,6 +237,7 @@ async function fight(bot: Bot, target: Entity, log: (e: ReflexEvent) => void): P
     }
     await sleep(100);
   }
+  setShield(bot, false);
   bot.clearControlStates();
   log({ reflex: 'fight', detail: `${target.name} ${target.isValid === false ? 'killed or gone' : 'left or bot hurt'}` });
 }

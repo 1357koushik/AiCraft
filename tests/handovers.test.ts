@@ -52,3 +52,25 @@ describe('HandoverTally', () => {
     expect(() => DoneWhenSchema.parse({ given: { player: 'Steve', items: {} } })).toThrow();
   });
 });
+
+describe('KillTally', () => {
+  it('counts a death right after the bot hit it, whoever swung, and nothing else', async () => {
+    const { EventEmitter } = await import('events');
+    const { KillTally } = await import('../src/brain/handovers.js');
+    const bot: any = new EventEmitter();
+    const hits: number[] = [];
+    bot.attack = (t: any) => hits.push(t.id);
+    const tally = new KillTally(bot);
+    const zombie = { id: 7, name: 'zombie' };
+    bot.attack(zombie);
+    expect(hits).toEqual([7]);
+    bot.emit('entityDead', zombie);
+    bot.emit('entityDead', zombie); // the same death twice counts once
+    bot.emit('entityDead', { id: 8, name: 'zombie' }); // never hit by the bot
+    expect(tally.killed('zombie')).toBe(1);
+    expect(tally.killed('minecraft:zombie')).toBe(1);
+    tally.dispose();
+    bot.attack({ id: 9, name: 'cow' });
+    expect(hits).toEqual([7, 9]);
+  });
+});

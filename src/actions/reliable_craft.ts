@@ -50,11 +50,21 @@ export async function resyncWindow(bot: Bot, window: any): Promise<void> {
 
 // One inventory job at a time. Crafting, equipping and tossing all move items through the cursor.
 let inventoryChain: Promise<unknown> = Promise.resolve();
+let inventoryJobs = 0;
+/** True while an inventory job holds or waits for the lock. A caller that must not queue (a reflex) skips instead. */
+export function inventoryLockBusy(): boolean {
+  return inventoryJobs > 0;
+}
 export function withInventoryLock<T>(fn: () => Promise<T>): Promise<T> {
+  inventoryJobs++;
   const run = inventoryChain.then(fn, fn);
   inventoryChain = run.then(
-    () => undefined,
-    () => undefined
+    () => {
+      inventoryJobs--;
+    },
+    () => {
+      inventoryJobs--;
+    }
   );
   return run;
 }

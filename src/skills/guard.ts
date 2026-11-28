@@ -34,6 +34,8 @@ const Args = z.object({
   place: z.object({ x: z.number(), y: z.number(), z: z.number() }).optional(),
   radius: z.number().min(4).max(32).default(12),
   minutes: z.number().positive().max(240).optional(),
+  /** Guard until the clock reaches morning (time of day back under MORNING_BEFORE after a night). */
+  until: z.literal('morning').optional(),
 });
 type GuardArgs = z.infer<typeof Args>;
 
@@ -55,6 +57,12 @@ const CREEPER_BACKOFF_MS = 600;
 /** A creeper is met this much farther out than other mobs: a late response to one costs the owner the most. */
 const CREEPER_EXTRA_RADIUS = 8;
 
+/** Morning has come when the clock is back under this after the night (0 is sunrise, night is 12542 to 23459). */
+const MORNING_BEFORE = 1000;
+const NIGHT_FROM = 12000;
+/** `until: "morning"` stops waiting for a morning that never comes (a full day is 20 minutes). */
+const MAX_UNTIL_MORNING_MS = 25 * 60 * 1000;
+
 const fmtSec = (ms: number) => `${Math.round(ms / 1000)} s`;
 
 /** Mobs this skill may attack: the reflexes' hostile list, never a player or anything tame or neutral. */
@@ -68,6 +76,8 @@ interface Threat {
   fromSpot: number;
 }
 
+const ARCHER_NAMES = new Set(['skeleton', 'stray', 'bogged', 'pillager']);
+
 /** Hostile mobs within `radius` of `spot`, nearest to the spot first, skipping those in `ignored` (entity id -> until). */
 export function threatsNear(entities: Iterable<any>, spot: Vec3, radius: number, ignored: Map<number, number>, now: number, self?: any, creeperBonus = 0): Threat[] {
   const out: Threat[] = [];
@@ -75,10 +85,47 @@ export function threatsNear(entities: Iterable<any>, spot: Vec3, radius: number,
     if (e === self || !e?.position || e.isValid === false || !isGuardTarget(e.name)) continue;
     if ((ignored.get(e.id) ?? 0) > now) continue;
     const d = e.position.distanceTo(spot);
-    if (d <= radius + (e.name === 'creeper' ? creeperBonus : 0)) out.push({ entity: e, fromSpot: d });
+    // Creepers and archers are met farther out: a creeper late costs the most, and an archer hits from range.
+    if (d <= radius + (e.name === 'creeper' || ARCHER_NAMES.has(e.name) ? creeperBonus : 0)) out.push({ entity: e, fromSpot: d });
   }
   return out.sort((a, b) => a.fromSpot - b.fromSpot);
 }
+
+/** True once the clock shows morning after a night: `sawNight` is whether a time of day of NIGHT_FROM or more was seen. */
+export function morningReached(tod: number | undefined, sawNight: boolean): boolean {
+  return sawNight && tod !== undefined && tod < MORNING_BEFORE;
+}
+
+/** The creeper tactic shared with hunt: a sprinting swing (knock-back), after which the caller steps back so the fuse cannot run. */
+export async function creeperStrike(ctx: { bot: Bot }, e: any, swingReach: number): Promise<boolean> {
+  const bot: any = ctx.bot;
+  stopPathfinder(ctx.bot);
+  await bestWeaponInHand(ctx.bot);
+  await bot.lookAt(e.position.offset(0, (e.height ?? 1.7) * 0.8, 0), true);
+  // A sprinting swing knocks the creeper back; sprint is toggled so the server sees a fresh sprint start.
+  bot.setControlState('sprint', false);
+  bot.setControlState('sprint', true);
+  bot.setControlState('forward', true);
+  await sleep(60);
+  let swung = false;
+  if (e.isValid !== false && e.position.distanceTo(bot.entity.position) <= swingReach + 0.6) {
+    bot.attack(e);
+    swung = true;
+  }
+  bot.setControlState('forward', false);
+  bot.setControlState('sprint', false);
+  return swung;
+}
+
+/** One step back (call every ~50 ms while backing off a creeper). */
+export function creeperBackStep(bot: Bot): void {
+  bot.setControlState('sprint', false);
+  bot.setControlState('forward', false);
+  bot.setControlState('back', true);
+  bot.setControlState('jump', (bot.entity as any).isCollidedHorizontally === true);
+}
+
+export const CREEPER_BACKOFF = CREEPER_BACKOFF_MS;
 
 const ARMOR_SLOTS: Array<['head' | 'torso' | 'legs' | 'feet', string]> = [['head', 'helmet'], ['torso', 'chestplate'], ['legs', 'leggings'], ['feet', 'boots']];
 const ARMOR_TIERS = ['netherite', 'diamond', 'iron', 'chainmail', 'golden', 'leather'];
@@ -110,9 +157,9 @@ function check(ctx: { bot: Bot }, args: GuardArgs) {
 export const guardSkill: SkillDefinition<GuardArgs> = {
   name: 'guard',
   summary:
-    'guard {player?, place?: {x,y,z}, radius?=12, minutes?}: stay near the player (or the place; with neither, where you stand) and kill hostile mobs that come within `radius` of it, nearest to them first; never touches players, pets or peaceful mobs. With no `minutes` it guards until the owner says stop. Use for "protect me", "guard me", "kill the zombies near my house".',
+    'guard {player?, place?: {x,y,z}, radius?=12, minutes?, until?: "morning"}: stay near the player (or the place; with neither, where you stand) and kill hostile mobs that come within `radius` of it, nearest to them first; never touches players, pets or peaceful mobs. With `until: "morning"` it guards through the night and ends when the sun is up (use that for "guard me for the night" / "all night"; done_when {"time_of_day": "<2000"}); with `minutes` it guards that long; with neither it guards until the owner says stop. Use for "protect me", "guard me", "kill the zombies near my house".',
   args: Args,
-  untilStopped: (raw) => raw.minutes === undefined,
+  untilStopped: (raw) => raw.minutes === undefined && raw.until === undefined,
   check: (ctx, args) => check(ctx, args),
   async run(ctx, args): Promise<SkillOutcome> {
     const bot: any = ctx.bot;
@@ -122,7 +169,9 @@ export const guardSkill: SkillDefinition<GuardArgs> = {
     bot.pathfinder.thinkTimeout = 3000;
 
     const startedAt = Date.now();
-    const endAt = args.minutes ? startedAt + args.minutes * 60000 : Infinity;
+    const endAt = args.minutes ? startedAt + args.minutes * 60000 : args.until ? startedAt + MAX_UNTIL_MORNING_MS : Infinity;
+    let sawNight = false;
+    const clock = () => (typeof bot.time?.timeOfDay === 'number' ? (bot.time.timeOfDay as number) : undefined);
     const fixedSpot = args.place ? new Vec3(args.place.x, args.place.y, args.place.z) : args.player ? null : bot.entity.position.clone();
     const what = args.player ?? (args.place ? `${args.place.x} ${args.place.y} ${args.place.z}` : 'this spot');
 
@@ -208,9 +257,21 @@ export const guardSkill: SkillDefinition<GuardArgs> = {
           // Open-ended: being told to stop is the normal end. With minutes it was cut short.
           return args.minutes
             ? finish({ status: 'interrupted', cause: 'interrupted', message: `Stopped guarding ${what} after ${took()}, before the ${args.minutes} minutes were up; killed ${killText()}.` })
+            : args.until
+            ? finish({ status: 'interrupted', cause: 'interrupted', message: `Stopped guarding ${what} after ${took()}, before morning; killed ${killText()}.` })
             : finish({ status: 'done', message: `Guarded ${what} for ${took()} until told to stop; killed ${killText()}.` });
         }
-        if (Date.now() >= endAt) return finish({ status: 'done', message: `Guarded ${what} for ${took()} (${args.minutes} min asked); killed ${killText()}.` });
+        const tod = clock();
+        if (tod !== undefined && tod >= NIGHT_FROM) sawNight = true;
+        if (args.until && morningReached(tod, sawNight)) {
+          return finish({ status: 'done', message: `Guarded ${what} until morning (time of day ${tod}) after ${took()}; killed ${killText()}.` });
+        }
+        if (Date.now() >= endAt) {
+          if (args.until && !args.minutes) {
+            return finish({ status: 'partial', cause: 'no_progress', message: `Guarded ${what} for ${took()} but morning had not come (time of day ${tod ?? 'unknown'}); killed ${killText()}.`, fix: 'guard again, or check the clock' });
+          }
+          return finish({ status: 'done', message: `Guarded ${what} for ${took()} (${args.minutes} min asked); killed ${killText()}.` });
+        }
 
         // Where the protected spot is right now.
         let spot: Vec3;
@@ -279,30 +340,14 @@ export const guardSkill: SkillDefinition<GuardArgs> = {
         if (e.name === 'creeper') {
           // Step back after a hit so the fuse (which only runs within about 3 blocks) resets.
           if (now < backoffUntil) {
-            bot.setControlState('sprint', false);
-            bot.setControlState('forward', false);
-            bot.setControlState('back', true);
-            bot.setControlState('jump', (bot.entity as any).isCollidedHorizontally === true);
+            creeperBackStep(ctx.bot);
             await sleep(50);
             continue;
           }
           bot.setControlState('back', false);
           if (d <= SWING_REACH && now - lastSwing >= SWING_MS) {
-            stopPathfinder(ctx.bot);
             goalFor = null;
-            await bestWeaponInHand(ctx.bot);
-            await bot.lookAt(e.position.offset(0, (e.height ?? 1.7) * 0.8, 0), true);
-            // A sprinting swing knocks the creeper back; sprint is toggled so the server sees a fresh sprint start.
-            bot.setControlState('sprint', false);
-            bot.setControlState('sprint', true);
-            bot.setControlState('forward', true);
-            await sleep(60);
-            if (e.isValid !== false && e.position.distanceTo(bot.entity.position) <= SWING_REACH + 0.6) {
-              bot.attack(e);
-              lastSwing = Date.now();
-            }
-            bot.setControlState('forward', false);
-            bot.setControlState('sprint', false);
+            if (await creeperStrike(ctx, e, SWING_REACH)) lastSwing = Date.now();
             backoffUntil = Date.now() + CREEPER_BACKOFF_MS;
             await sleep(30);
             continue;

@@ -91,6 +91,8 @@ export interface SkillDefinition<Args = any> {
   run(ctx: SkillContext, args: Args): Promise<SkillOutcome>;
   /** True when, with these (raw) args, the skill runs until it is cancelled (guard or follow with no `minutes`). */
   untilStopped?: (rawArgs: Record<string, unknown>) => boolean;
+  /** Only looks (opens and reads something, changes nothing), so a plan of these needs no done_when. */
+  readOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------

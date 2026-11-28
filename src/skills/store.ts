@@ -33,7 +33,8 @@ export function bagCounts(bot: Bot): Record<string, number> {
 function defaultItems(bot: Bot): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [name, n] of Object.entries(bagCounts(bot))) {
-    if (TOOL_RE.test(name) || (bot.registry as any).foodsByName?.[name]) continue;
+    // A bed is the bot's spawn point and its way through the night: never put away unless named.
+    if (TOOL_RE.test(name) || (bot.registry as any).foodsByName?.[name] || name.endsWith('_bed')) continue;
     out[name] = n;
   }
   return out;
@@ -61,15 +62,15 @@ function evaluate(bot: Bot, args: StoreArgs): Precondition & { wanted?: Record<s
       return { ok: false, cause: 'missing_item', message: `Not enough to store: needs ${list}.`, fix: `get ${list}, or store fewer` };
     }
   } else {
+    // "Store everything" of nothing is already done; run() reports it without walking anywhere.
     wanted = defaultItems(bot);
-    if (!Object.keys(wanted).length) return { ok: false, cause: 'missing_item', message: 'Nothing to store: the inventory holds only tools, armor and food.' };
   }
   return { ok: true, wanted };
 }
 
 export const storeSkill: SkillDefinition<StoreArgs> = {
   name: 'store',
-  summary: 'store {x, y, z, items?}: walk to the chest/barrel/shulker box at that block and deposit `items` ({name: count}); default is everything except tools, armor and food.',
+  summary: 'store {x, y, z, items?}: walk to the chest/barrel/shulker box at that block and deposit `items` ({name: count}); default is everything except tools, armor, food and beds (with nothing else held it is done at once).',
   args: Args,
   check(ctx, args) {
     const r = evaluate(ctx.bot, args);
@@ -81,6 +82,7 @@ export const storeSkill: SkillDefinition<StoreArgs> = {
     const r = evaluate(bot, args);
     if (!r.ok) return { status: 'failed', cause: r.cause, message: r.message, fix: r.fix, evidence };
     const wanted = r.wanted!;
+    if (!Object.keys(wanted).length) return { status: 'done', message: 'Nothing to store: the inventory holds only tools, armor, food and beds.', evidence };
     const pos = new Vec3(args.x, args.y, args.z);
     const block = bot.blockAt(pos)!;
 

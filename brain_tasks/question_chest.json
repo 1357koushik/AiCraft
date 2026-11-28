@@ -1,0 +1,29 @@
+{
+  "id": "question_chest",
+  "text": "how many oak logs are in the chest at 104 121 100?",
+  "timeoutSec": 120,
+  "callBudget": 4,
+  "setup": [
+    "gamerule doMobSpawning false",
+    "time set day",
+    "forceload add 90 90 120 110",
+    "tp dragonai 100.5 121 100.5",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "fill 100 120 96 110 120 104 stone",
+    "fill 100 121 96 110 128 104 air",
+    "tp dragonai 100.5 121 100.5",
+    "give dragonai bread 2",
+    "setblock 104 121 100 chest[facing=west]",
+    "item replace block 104 121 100 container.0 with oak_log 23",
+    "item replace block 104 121 100 container.5 with oak_log 4"
+  ],
+  "expect": {
+    "maxDeaths": 0
+  },
+  "expectOutcome": "answered",
+  "expectAnswerIncludes": [
+    "27"
+  ],
+  "seed": "20261109"
+}

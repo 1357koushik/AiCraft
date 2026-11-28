@@ -18,6 +18,7 @@ const REACH = 4.5;
 export const inspectContainerSkill: SkillDefinition<InspectArgs> = {
   name: 'inspect_container',
   summary: 'inspect_container {x, y, z}: open the chest, barrel, shulker box or furnace there, report what it holds, and close it. Moves nothing.',
+  readOnly: true,
   args: Args,
   check(ctx, a) {
     const b = ctx.bot.blockAt(new Vec3(Math.floor(a.x), Math.floor(a.y), Math.floor(a.z)));

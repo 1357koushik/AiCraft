@@ -1,0 +1,119 @@
+{
+  "id": "guard_night",
+  "text": "guard me for the night",
+  "timeoutSec": 330,
+  "callBudget": 8,
+  "owner": {
+    "name": "OwnerPlayer",
+    "spawn": [
+      97.5,
+      121,
+      115.5
+    ],
+    "script": [
+      {
+        "say": "guard me for the night"
+      },
+      {
+        "wait": 290
+      }
+    ]
+  },
+  "setup": [
+    "gamerule doDaylightCycle true",
+    "gamerule doMobSpawning false",
+    "gamerule doWeatherCycle false",
+    "forceload add 80 80 150 135",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "fill 90 120 90 150 120 130 stone",
+    "fill 90 121 90 150 128 130 air",
+    "time set 19000",
+    "tp OwnerPlayer 97.5 121 115.5",
+    "tp dragonai 96.5 121 112.5",
+    "give dragonai iron_sword 1",
+    "give dragonai iron_helmet 1",
+    "give dragonai iron_chestplate 1",
+    "give dragonai iron_leggings 1",
+    "give dragonai iron_boots 1",
+    "give dragonai shield 1",
+    "give dragonai bread 3"
+  ],
+  "events": [
+    {
+      "at": 10,
+      "command": "summon zombie 111.5 121 114.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 10,
+      "command": "summon zombie 112.5 121 117.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 50,
+      "command": "summon zombie 112.5 121 113.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 50,
+      "command": "summon skeleton 113.5 121 118.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 90,
+      "command": "summon zombie 111.5 121 116.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 90,
+      "command": "summon spider 112.5 121 112.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 130,
+      "command": "summon zombie 112.5 121 115.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 130,
+      "command": "summon creeper 113.5 121 115.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 170,
+      "command": "summon zombie 111.5 121 113.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 170,
+      "command": "summon zombie 112.5 121 118.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 210,
+      "command": "summon zombie 112.5 121 116.5 {PersistenceRequired:1b}"
+    },
+    {
+      "at": 210,
+      "command": "summon skeleton 113.5 121 113.5 {PersistenceRequired:1b}"
+    }
+  ],
+  "expect": {
+    "stats": {
+      "killed:zombie": ">=4",
+      "killed:skeleton": ">=1",
+      "killed:spider": ">=1"
+    },
+    "ownerDamageTakenMax": 6,
+    "daytime": "<2000",
+    "maxDeaths": 0,
+    "regions": [
+      {
+        "from": [
+          90,
+          120,
+          105
+        ],
+        "to": [
+          120,
+          120,
+          125
+        ],
+        "block": "stone",
+        "mode": "all"
+      }
+    ]
+  },
+  "seed": "20261109"
+}

@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import { HandoverTally, GivenFn } from './handovers.js';
+import { HandoverTally, KillTally, GivenFn, KilledFn } from './handovers.js';
 import { Vec3 } from 'vec3';
 import { runPlan, runSkill, SkillRegistry, StepPlan, StepRecord } from '../skills/contract.js';
 import { parseComparison, compare } from '../oracle/expect.js';
@@ -81,7 +81,7 @@ function blockMatches(bot: Bot, x: number, y: number, z: number, want: string): 
 }
 
 /** Checks the done-condition from what the bot can see. Only code decides that a task is finished. */
-export function isDone(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn): boolean {
+export function isDone(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn, killed?: KilledFn): boolean {
   if (!doneWhen) return false;
   const parts: boolean[] = [];
   if (doneWhen.given) {
@@ -94,6 +94,7 @@ export function isDone(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn
   }
   if (doneWhen.blocks?.length) parts.push(doneWhen.blocks.every((b) => blockMatches(bot, b.x, b.y, b.z, b.block) === true));
   if (doneWhen.food_at_least !== undefined) parts.push((bot.food ?? 0) >= doneWhen.food_at_least);
+  if (doneWhen.killed) parts.push(Boolean(killed) && Object.entries(doneWhen.killed).every(([mob, n]) => killed!(mob) >= n));
   if (doneWhen.time_of_day !== undefined) parts.push(compare(Number(bot.time?.timeOfDay ?? 0), parseComparison(doneWhen.time_of_day)));
   if (doneWhen.near) {
     const n = doneWhen.near;
@@ -103,13 +104,14 @@ export function isDone(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn
 }
 
 /** How far the bot is from the done-condition: missing items, wrong blocks, and distance. Lower is better. */
-function shortfall(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn): number {
+function shortfall(bot: Bot, doneWhen: DoneWhen | undefined, given?: GivenFn, killed?: KilledFn): number {
   if (!doneWhen) return Number.POSITIVE_INFINITY;
   const have = inventory(bot);
   let missing = 0;
   if (doneWhen.given) for (const [item, n] of Object.entries(doneWhen.given.items)) missing += Math.max(0, n - (given?.(doneWhen.given.player, item) ?? 0));
   for (const b of doneWhen.blocks ?? []) if (blockMatches(bot, b.x, b.y, b.z, b.block) !== true) missing++;
   if (doneWhen.food_at_least !== undefined) missing += Math.max(0, doneWhen.food_at_least - (bot.food ?? 0));
+  for (const [mob, n] of Object.entries(doneWhen.killed ?? {})) missing += Math.max(0, n - (killed?.(mob) ?? 0));
   if (doneWhen.time_of_day !== undefined && !compare(Number(bot.time?.timeOfDay ?? 0), parseComparison(doneWhen.time_of_day))) missing++;
   if (doneWhen.near) {
     const n = doneWhen.near;
@@ -127,14 +129,16 @@ const stepKey = (skill: string, args: unknown) => `${skill} ${JSON.stringify(arg
 
 export async function runBrain(o: BrainOptions): Promise<BrainResult> {
   const tally = new HandoverTally(o.bot);
+  const kills = new KillTally(o.bot);
   try {
-    return await runBrainWith(o, tally.given);
+    return await runBrainWith(o, tally.given, kills.killed);
   } finally {
+    kills.dispose();
     tally.dispose();
   }
 }
 
-async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResult> {
+async function runBrainWith(o: BrainOptions, given: GivenFn, killed: KilledFn): Promise<BrainResult> {
   const callBudget = o.callBudget ?? 12;
   const stallLimit = o.stallLimit ?? 4;
   const knownItems = new Set(Object.keys((o.bot.registry as any).itemsByName));
@@ -196,11 +200,11 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
       state.trigger = after.trigger;
       continue;
     }
-    if (isDone(o.bot, state.doneWhen, given)) return finish('done', `Done-condition met: ${JSON.stringify(state.doneWhen)}.`);
+    if (isDone(o.bot, state.doneWhen, given, killed)) return finish('done', `Done-condition met: ${JSON.stringify(state.doneWhen)}.`);
     if (state.callsUsed >= callBudget) return finish('budget_exhausted', `Used all ${callBudget} decisions without finishing.`);
 
     // Progress is the shortfall against the done-condition; a decision that does not reduce it counts as a stall.
-    const now = shortfall(o.bot, state.doneWhen, given);
+    const now = shortfall(o.bot, state.doneWhen, given, killed);
     if (now < best || lastPlanProgressed) {
       best = Math.min(best, now);
       stalled = 0;
@@ -235,6 +239,17 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
     if (!parsed || !parsed.ok) return finish('llm_error', `No valid decision: ${parsed && !parsed.ok ? parsed.error : 'none'}.`);
     const d = parsed.decision;
     state.notes = d.notes;
+    // A plan that only looks (inspect a chest to answer "what's in it?") needs no done_when: run it, then ask for the answer.
+    const lookOnly = parsed.plan?.steps.every((s) => o.registry.get(s.skill)?.readOnly === true) ?? false;
+    if (lookOnly && !d.standing && !state.doneWhen && (!d.done_when || isDone(o.bot, d.done_when, given, killed))) {
+      o.log(`[brain] look: ${parsed.plan!.steps.map((s) => stepKey(s.skill, s.args)).join(' -> ')}`);
+      const look = await runPlan(parsed.plan!, o.registry, { bot: o.bot, signal: o.signal, log: o.log });
+      result.steps.push(...look.steps);
+      state.lastSteps = look.steps;
+      lastPlanProgressed = false;
+      state.trigger = `Your look ${look.outcome === 'completed' ? 'finished' : `stopped: ${look.message}`} (see LAST STEPS). If the task is a question, reply now with "answer"; if it needs action, send steps with a done_when.`;
+      continue;
+    }
     // A standing order is not run here: the companion keeps the plan and runs it between other tasks.
     if (d.standing && parsed.plan) {
       result.standing = { plan: parsed.plan, everyMinutes: d.standing.every_minutes, when: d.standing.when, untilStopped: planRunsUntilStopped(parsed.plan, o.registry) };
@@ -244,7 +259,7 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
     // The LLM may tighten its done-condition once it learns more (e.g. how much a chest holds),
     // but a new condition that is already true is refused, so it cannot be used to declare success.
     if (d.done_when && state.doneWhen && JSON.stringify(d.done_when) !== JSON.stringify(state.doneWhen)) {
-      if (isDone(o.bot, d.done_when, given)) {
+      if (isDone(o.bot, d.done_when, given, killed)) {
         state.journal.push(`Kept done_when ${JSON.stringify(state.doneWhen)}; the proposed ${JSON.stringify(d.done_when)} is already true.`);
       } else {
         state.journal.push(`done_when changed from ${JSON.stringify(state.doneWhen)} to ${JSON.stringify(d.done_when)}.`);
@@ -254,14 +269,16 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
     }
     if (d.done_when && !state.doneWhen) {
       // A condition that is already true before any step has run cannot tell whether the task was done.
-      if (result.steps.length === 0 && isDone(o.bot, d.done_when, given) && !d.answer && !d.give_up && !d.ask_owner) {
+      // Kills and handovers are counted from this task's start, so if they are already met it happened during the task.
+      const sinceTaskStart = Object.keys(d.done_when).every((k) => k === 'killed' || k === 'given');
+      if (result.steps.length === 0 && !sinceTaskStart && isDone(o.bot, d.done_when, given, killed) && !d.answer && !d.give_up && !d.ask_owner) {
         state.trigger = `Your done_when ${JSON.stringify(d.done_when)} is already true now, before anything was done, so it cannot show the task was finished. Describe the end state the owner asked for (for a block, include its state, e.g. "lever[powered=true]").`;
         state.journal.push(`Rejected done_when ${JSON.stringify(d.done_when)}: already true at the start.`);
         o.log(`[brain] rejected done_when that is already true: ${JSON.stringify(d.done_when)}`);
         continue;
       }
       state.doneWhen = d.done_when;
-      best = shortfall(o.bot, state.doneWhen, given);
+      best = shortfall(o.bot, state.doneWhen, given, killed);
       o.log(`[brain] done_when ${JSON.stringify(d.done_when)}`);
     }
     if (d.answer) return finish('answered', d.answer);
@@ -271,7 +288,7 @@ async function runBrainWith(o: BrainOptions, given: GivenFn): Promise<BrainResul
       state.trigger = 'You did not set done_when. Set it in this reply (or send "answer" if the task is only a question).';
       continue;
     }
-    if (isDone(o.bot, state.doneWhen, given)) continue;
+    if (isDone(o.bot, state.doneWhen, given, killed)) continue;
     // after_plan is only for a timed duty: without a step that has `minutes`, the plan's end proves nothing.
     if (state.doneWhen.after_plan && !parsed.plan!.steps.some((s) => typeof (s.args as any)?.minutes === 'number')) {
       state.doneWhen = undefined;

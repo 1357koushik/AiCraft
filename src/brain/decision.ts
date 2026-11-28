@@ -27,12 +27,14 @@ export const DoneWhenSchema = z
       .optional(),
     /** The food bar (0-20) must be at least this, e.g. 14 for "eat until you are fed". */
     food_at_least: z.number().int().min(1).max(20).optional(),
+    /** Mobs the bot must have killed during this task, e.g. {"zombie": 1}; counted from its own hits, reflexes included. */
+    killed: z.record(z.number().int().min(1).max(1000)).refine((r) => Object.keys(r).length > 0, 'killed must name at least one mob').optional(),
     /** The time of day (0-23999, 0 is sunrise, night is 12542-23459) compared, e.g. "<2000" for "the night is over". */
     time_of_day: z.string().regex(/^(>=|<=|==|=|>|<)?\s*\d+$/).optional(),
   })
   .strict()
-  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true || Boolean(d.given) || d.food_at_least !== undefined || d.time_of_day !== undefined, {
-    message: 'done_when needs at least one of inventory, blocks, near, given, food_at_least, time_of_day or after_plan',
+  .refine((d) => Boolean(d.inventory && Object.keys(d.inventory).length) || Boolean(d.blocks?.length) || Boolean(d.near) || d.after_plan === true || Boolean(d.given) || d.food_at_least !== undefined || d.time_of_day !== undefined || Boolean(d.killed), {
+    message: 'done_when needs at least one of inventory, blocks, near, given, killed, food_at_least, time_of_day or after_plan',
   });
 export type DoneWhen = z.infer<typeof DoneWhenSchema>;
 
